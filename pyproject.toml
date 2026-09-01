@@ -1,0 +1,24 @@
+[project]
+name = "microlens-recsys-mvp"
+version = "0.1.0"
+description = "A reproducible MicroLens-50K recommendation system MVP"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.116,<1.0",
+  "numpy>=2.0,<3.0",
+  "python-dotenv>=1.1,<2.0",
+  "scikit-learn>=1.6,<2.0",
+  "scipy>=1.15,<2.0",
+  "uvicorn>=0.35,<1.0",
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28,<1.0",
+  "pytest>=8.4,<9.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

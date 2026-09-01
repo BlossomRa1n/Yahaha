@@ -1,0 +1,37 @@
+# Raw MicroLens data must never be committed or redistributed.
+data/raw/
+data/processed/
+artifacts/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.pt
+*.pth
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+node_modules/
+test-results/
+playwright-report/
+
+# Local editor and operating-system files.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# The assessment document is local input, not a project deliverable.
+*.docx
