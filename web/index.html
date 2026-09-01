@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="description" content="MicroLens 推荐系统工作台">
+    <title>MicroLens 推荐工作台</title>
+    <link rel="stylesheet" href="/web/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+
+    <div id="app" class="app-shell">
+      <header class="app-header">
+        <a class="brand" href="#feed" aria-label="MicroLens 推荐工作台首页">
+          <span class="brand-mark" aria-hidden="true">M</span>
+          <span>
+            <strong>MicroLens</strong>
+            <small>推荐工作台</small>
+          </span>
+        </a>
+
+        <nav id="primary-nav" class="primary-nav" aria-label="主导航" hidden>
+          <button class="nav-button is-active" type="button" data-view="feed">信息流</button>
+          <button class="nav-button admin-only" type="button" data-view="dashboard" hidden>Dashboard</button>
+          <button class="nav-button admin-only" type="button" data-view="operations" hidden>内容运营</button>
+        </nav>
+
+        <div id="session-controls" class="session-controls" hidden>
+          <span id="session-user" class="session-user"></span>
+          <button id="logout-button" class="icon-text-button" type="button" title="退出当前账号">
+            <span aria-hidden="true">&#x21aa;</span><span>退出</span>
+          </button>
+        </div>
+      </header>
+
+      <div id="global-alert" class="global-alert" role="status" aria-live="polite" hidden></div>
+
+      <main id="main-content">
+        <section id="login-view" class="auth-view" aria-labelledby="login-title">
+          <div class="auth-panel">
+            <p class="eyebrow">多用户推荐系统</p>
+            <h1 id="login-title">登录工作台</h1>
+            <form id="login-form" class="form-stack" novalidate>
+              <label>
+                <span>用户名</span>
+                <input id="username" name="username" type="text" autocomplete="username" required>
+              </label>
+              <label>
+                <span>密码</span>
+                <input id="password" name="password" type="password" autocomplete="current-password" required>
+              </label>
+              <p id="login-error" class="form-error" role="alert" hidden></p>
+              <button id="login-button" class="primary-button" type="submit">登录</button>
+            </form>
+          </div>
+        </section>
+
+        <section id="feed-view" class="page-view" aria-labelledby="feed-title" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">在线推荐</p>
+              <h1 id="feed-title">推荐信息流</h1>
+            </div>
+            <button id="profile-button" class="secondary-button" type="button" title="查看当前账号画像">
+              <span aria-hidden="true">&#x25ce;</span><span>我的画像</span>
+            </button>
+          </div>
+
+          <div id="feed-tabs" class="segmented-control" role="tablist" aria-label="信息流类型">
+            <button id="tab-personalized" role="tab" aria-selected="true" aria-controls="feed-panel" data-feed="personalized" type="button">个性化</button>
+            <button id="tab-popular" role="tab" aria-selected="false" aria-controls="feed-panel" data-feed="popular" type="button">热门</button>
+            <button id="tab-explore" role="tab" aria-selected="false" aria-controls="feed-panel" data-feed="explore" type="button">探索</button>
+          </div>
+
+          <div id="feed-panel" role="tabpanel" aria-labelledby="tab-personalized">
+            <dl id="feed-context" class="context-strip" hidden>
+              <div><dt>Request ID</dt><dd><code id="feed-request-id"></code></dd></div>
+              <div><dt>模型</dt><dd id="feed-model-version"></dd></div>
+              <div><dt>画像版本</dt><dd id="feed-profile-version"></dd></div>
+              <div id="fallback-context" hidden><dt>降级</dt><dd id="feed-fallback"></dd></div>
+            </dl>
+
+            <div id="feed-state" class="state-panel" role="status">正在确认登录状态...</div>
+            <div id="feed-list" class="feed-grid" aria-live="polite"></div>
+            <div class="load-more-row">
+              <button id="load-more-button" class="secondary-button" type="button" hidden>
+                <span aria-hidden="true">+</span><span>加载更多</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section id="dashboard-view" class="page-view" aria-labelledby="dashboard-title" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">真实事件聚合</p>
+              <h1 id="dashboard-title">Dashboard</h1>
+            </div>
+            <button id="dashboard-refresh" class="icon-button" type="button" title="刷新 Dashboard" aria-label="刷新 Dashboard">&#x21bb;</button>
+          </div>
+
+          <div id="dashboard-state" class="state-panel" role="status">等待加载指标</div>
+          <section aria-labelledby="overview-title">
+            <div class="section-heading">
+              <h2 id="overview-title">概览</h2>
+              <span id="dashboard-updated" class="muted"></span>
+            </div>
+            <div id="metric-grid" class="metric-grid"></div>
+          </section>
+
+          <div class="two-column-layout">
+            <section aria-labelledby="feed-breakdown-title">
+              <h2 id="feed-breakdown-title">信息流分布</h2>
+              <div class="table-scroll">
+                <table>
+                  <thead><tr><th>信息流</th><th>请求</th><th>曝光</th><th>点击</th><th>CTR</th><th>占比</th></tr></thead>
+                  <tbody id="feed-breakdown-body"></tbody>
+                </table>
+              </div>
+            </section>
+            <section aria-labelledby="top-items-title">
+              <h2 id="top-items-title">热门内容</h2>
+              <div class="table-scroll">
+                <table>
+                  <thead><tr><th>内容</th><th>曝光</th><th>点击</th><th>喜欢</th><th>CTR</th></tr></thead>
+                  <tbody id="top-items-body"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <section aria-labelledby="diagnostics-title">
+            <h2 id="diagnostics-title">链路诊断</h2>
+            <div class="diagnostic-grid">
+              <form id="request-debug-form" class="inline-form">
+                <label for="request-debug-id">Request ID</label>
+                <input id="request-debug-id" name="request_id" required>
+                <button class="secondary-button" type="submit">查询请求</button>
+              </form>
+              <form id="user-debug-form" class="inline-form">
+                <label for="user-debug-id">用户 ID</label>
+                <input id="user-debug-id" name="user_id" required>
+                <button class="secondary-button" type="submit">查询用户</button>
+              </form>
+            </div>
+            <pre id="diagnostic-result" class="diagnostic-result" tabindex="0">选择一个请求或用户进行查询。</pre>
+          </section>
+
+          <section aria-labelledby="models-title">
+            <h2 id="models-title">模型运行</h2>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>版本</th><th>算法</th><th>状态</th><th>训练时间</th><th>指标</th></tr></thead>
+                <tbody id="models-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="operations-view" class="page-view" aria-labelledby="operations-title" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">服务端规则权威</p>
+              <h1 id="operations-title">内容运营</h1>
+            </div>
+            <button id="new-boost-button" class="primary-button" type="button">
+              <span aria-hidden="true">+</span><span>新建强推</span>
+            </button>
+          </div>
+
+          <p class="rule-notice"><strong>规则优先级：</strong>下线始终高于强推。所有操作由服务端鉴权并写入审计。</p>
+          <form id="item-search-form" class="filter-bar">
+            <label><span>搜索</span><input name="q" type="search" placeholder="内容 ID 或标题"></label>
+            <label><span>状态</span><select name="status"><option value="">全部</option><option value="online">在线</option><option value="offline">已下线</option></select></label>
+            <button class="secondary-button" type="submit">查询</button>
+          </form>
+
+          <div id="operations-state" class="state-panel" role="status">等待加载内容</div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>内容 ID</th><th>标题</th><th>热度</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+              <tbody id="items-body"></tbody>
+            </table>
+          </div>
+          <div class="pagination-row">
+            <button id="items-previous" class="icon-text-button" type="button" disabled><span aria-hidden="true">&#x2190;</span><span>上一页</span></button>
+            <span id="items-page-label" class="muted">第 1 页</span>
+            <button id="items-next" class="icon-text-button" type="button" disabled><span>下一页</span><span aria-hidden="true">&#x2192;</span></button>
+          </div>
+
+          <section aria-labelledby="audit-title">
+            <div class="section-heading">
+              <h2 id="audit-title">操作审计</h2>
+              <button id="audit-refresh" class="icon-button" type="button" title="刷新审计记录" aria-label="刷新审计记录">&#x21bb;</button>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>时间</th><th>管理员</th><th>操作</th><th>对象</th><th>状态变化</th><th>原因</th></tr></thead>
+                <tbody id="operations-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="profile-dialog" class="modal">
+      <div class="modal-heading"><div><p class="eyebrow">当前用户</p><h2>画像与最近行为</h2></div><button class="icon-button" data-close-dialog type="button" title="关闭" aria-label="关闭">&#xd7;</button></div>
+      <div id="profile-state" class="state-panel" role="status">等待加载画像</div>
+      <dl id="profile-summary" class="detail-list"></dl>
+      <h3>最近行为</h3>
+      <div class="table-scroll"><table><thead><tr><th>时间</th><th>行为</th><th>内容</th><th>Request ID</th></tr></thead><tbody id="profile-events-body"></tbody></table></div>
+    </dialog>
+
+    <dialog id="status-dialog" class="modal compact-modal">
+      <div class="modal-heading"><h2 id="status-dialog-title">更新内容状态</h2><button class="icon-button" data-close-dialog type="button" title="关闭" aria-label="关闭">&#xd7;</button></div>
+      <form id="status-form" class="form-stack">
+        <input name="item_id" type="hidden">
+        <input name="status" type="hidden">
+        <p id="status-dialog-copy"></p>
+        <label><span>原因</span><textarea name="reason" rows="3" maxlength="500" required></textarea></label>
+        <p class="form-error" data-form-error role="alert" hidden></p>
+        <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">取消</button><button class="danger-button" type="submit">确认操作</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="boost-dialog" class="modal">
+      <div class="modal-heading"><div><p class="eyebrow">定向投放</p><h2>新建强推规则</h2></div><button class="icon-button" data-close-dialog type="button" title="关闭" aria-label="关闭">&#xd7;</button></div>
+      <form id="boost-form" class="form-grid">
+        <label><span>内容 ID</span><input name="item_id" required></label>
+        <label><span>投放范围</span><select name="audience"><option value="all">全部用户</option><option value="users">指定用户</option></select></label>
+        <label class="full-width" data-user-ids hidden><span>指定用户</span><select name="user_ids" multiple size="4"></select></label>
+        <fieldset class="full-width"><legend>信息流</legend><label><input name="feed_types" type="checkbox" value="personalized" checked>个性化</label><label><input name="feed_types" type="checkbox" value="popular">热门</label><label><input name="feed_types" type="checkbox" value="explore">探索</label></fieldset>
+        <label><span>位置（从 0 开始）</span><input name="position" type="number" min="0" value="0" required></label>
+        <label><span>优先级</span><input name="priority" type="number" value="100" required></label>
+        <label><span>开始时间</span><input name="starts_at" type="datetime-local" required></label>
+        <label><span>结束时间</span><input name="ends_at" type="datetime-local" required></label>
+        <label class="full-width"><span>原因</span><textarea name="reason" rows="3" maxlength="500" required></textarea></label>
+        <p class="form-error full-width" data-form-error role="alert" hidden></p>
+        <div class="dialog-actions full-width"><button class="secondary-button" data-close-dialog type="button">取消</button><button class="primary-button" type="submit">创建规则</button></div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/web/app.js"></script>
+  </body>
+</html>
