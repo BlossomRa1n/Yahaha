@@ -126,7 +126,8 @@ def test_delivery_documents_are_honest_about_verification() -> None:
     assert "干净 checkout" in readme
     assert "正式演示视频" in readme
     assert "PENDING" in verification
-    assert "Not run" in verification
+    assert "Demo video" in verification
+    assert "recording was not performed" in verification
     assert "3–5 Minute" in demo
     assert "MicroLens" in readme
     assert "data/raw/" in readme

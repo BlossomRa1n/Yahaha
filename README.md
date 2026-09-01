@@ -6,7 +6,7 @@ TruncatedSVD 训练、FastAPI/SQLite 在线服务、同源静态 Web 工作台�
 
 > 当前状态：核心纵向链路、全量离线训练、API 测试和桌面/移动浏览器流程已实测。
 > 只有 `docs/VERIFICATION.md` 中记录了真实退出码和输出摘要的项目才算已验证；
-> 干净 checkout 复现与正式演示视频仍明确列为未完成。
+> 干净 checkout 的 smoke 链路已复现；正式演示视频仍明确列为未完成。
 
 ## 架构与边界
 
@@ -176,7 +176,8 @@ uv run pytest tests/test_web_contract.py -p no:cacheprovider
 已验证：当前 full 模型产物及其指标文件、15 项全仓 pytest、Web 静态契约断言、
 JavaScript 语法、19,220 内容数据库初始化、真实纵向 API 链路，以及 1440px/390px
 浏览器中的登录、Feed、行为画像、Dashboard、强推、下线、恢复和审计。浏览器控制台
-没有 warning/error。尚未验证的是从独立干净 checkout 完整复现。
+没有 warning/error。独立干净 checkout 也已按 README 完成锁定依赖、smoke pipeline、
+数据库初始化、全套测试、JavaScript 检查和健康检查。
 
 降级项：API 返回即视为 impression，不能证明进入浏览器 viewport；封面为本地占位；
 SQLite 同步更新画像；cursor 不是跨模型发布或运营变更的持久快照；事件当前只同步
@@ -189,8 +190,7 @@ Mock：测试账号和占位封面是 seed/demo 辅助；自动化单元测试�
 复杂图表、CSV/告警、云部署。
 
 当前风险：全量 CPU 已实测约 19.3 秒但峰值内存未测；SQLite 并发写入能力有限；
-干净 checkout 尚未复现；恢复后的普通候选只恢复“可参与推荐”，演示需保留有效
-强推规则来稳定证明重新可见。
+恢复后的普通候选只恢复“可参与推荐”，演示需保留有效强推规则来稳定证明重新可见。
 
 若增加一周：增加 Playwright 多浏览器 E2E、事件批量重试队列、时间范围 Dashboard
 与趋势图、boost 管理/停用、离线训练消费在线事件、模型版本对比、结构化日志和延迟

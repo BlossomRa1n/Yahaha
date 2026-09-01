@@ -34,8 +34,8 @@
 | V-08 | JavaScript syntax | `node --check web/api.js`; `node --check web/app.js` | Latest main-thread rerun: both exited 0 | Main thread | PASSED |
 | V-09 | Browser workflow | Real browser at 1440 px and 390 px | Alice behavior/profile and admin Dashboard/operations passed; final clean-state mobile run had 12 cards, no horizontal overflow and zero console warnings/errors; A/B, carol and full demo script were not all repeated in browser | Main-thread browser smoke | PARTIAL |
 | V-10 | Offline authority | Real API plus browser boost/offline/restore checks | Item 2363 forced at position 0; offline overrode boost, direct item returned 404 and all three feeds omitted it; restore and audit succeeded | Main-thread API/browser smoke | PASSED |
-| V-11 | Secret/raw audit | Inspect tracked files and history | No completed tracked-file/history audit recorded | Pending lead run | PENDING |
-| V-12 | Clean environment | Repeat README from fresh checkout | Not run | Pending lead run | PENDING |
+| V-11 | Secret/raw audit | Inspect tracked files and all committed paths/history | No raw/processed data, artifact, DB, `.env`, DOCX or large model file is tracked; meaningful module commits exist | Main-thread Git audit | PASSED |
+| V-12 | Clean environment | Clone committed history, add user-supplied official raw input, repeat README smoke | Locked sync, pipeline, seed, 15 tests, JS and health all exited 0 | Main-thread clean clone | PASSED |
 | V-13 | Live event/Dashboard smoke | Feed then click/like against running service | `+1` request, `+5` exposures, `+1` click and `+1` like observed in real aggregates | Main-thread API smoke | PASSED |
 
 ## Offline Metrics
@@ -59,7 +59,8 @@ generated `metrics.json`.
 | Boost/offline/restore | Target feed, all-path filter, audit before/after | Item 2363 appeared as forced position 0; offline won over boost, direct API returned 404, three feeds omitted it; restore and audit passed | PASSED |
 | Error/fallback | Missing model, empty candidates, offline item, network error | Automated corrupt-model fallback and live offline 404 passed; browser empty/network-failure states were not forced | PARTIAL |
 | Responsive/console | Desktop and mobile layout, browser console | 1440 px and 390 px workflows completed with zero console warnings/errors | PASSED |
-| Clean reproduction/video | Fresh checkout and 3–5 minute recording | Neither was performed | PENDING |
+| Clean reproduction | Fresh checkout through smoke model, DB, tests and health | Completed from the four committed revisions | PASSED |
+| Demo video | 3–5 minute recording | Script exists; recording was not performed | PENDING |
 
 ## Append-Only Run Notes
 
@@ -113,8 +114,6 @@ Add dated entries below. Include failures and subsequent fixes; never replace an
 
 ### Still pending after integration
 
-- A fresh-checkout/clean-environment reproduction.
-- Tracked-file/history audit for raw data, artifacts, `.env`, secrets and meaningful commit count.
 - All three normal users in browser, forced network/empty states and a 3–5 minute recorded
   demonstration.
 
@@ -133,3 +132,13 @@ Add dated entries below. Include failures and subsequent fixes; never replace an
   `/api/v1/health` returned `status=ok`, `database=ok`, that model version and `model_error=null`.
 - A fresh mobile browser pass at 390 px rendered 12 real personalized cards. The DOM audit returned
   `innerWidth=390`, `scrollWidth=375`; the browser console contained no warning or error entries.
+- A clean clone from the four committed revisions was created in an ignored temporary directory.
+  After copying the three official files as the documented user-supplied input, locked dependency
+  sync succeeded, the smoke `pipeline all` command exited `0`, imported all 359,708 interactions,
+  recreated the same cutoffs and published a 2,000-user smoke model. DB initialization imported
+  19,220 items and seeded alice/bob/carol/admin; pytest returned `15 passed, 1 warning in 5.61s`,
+  both JavaScript checks exited `0`, and health returned DB/model status `ok`.
+- Git tracked-path and history audits found no raw/processed data, artifact, database, `.env`,
+  assessment DOCX or large model file. Repository objects total about 142 KiB before packing. Four
+  implementation commits separately cover contracts/config, offline pipeline, backend service and
+  frontend/delivery; this evidence update is committed separately.

@@ -197,13 +197,12 @@ Lead review:
   alice/admin browser paths and a clean browser console.
 - Confirmed by specialist runs and inspected artifacts/tests: official split,
   metrics, model publication, static Web contract and repository test suite.
-- Still pending: clean-checkout reproduction, tracked-file/secret/history audit,
-  full alice/bob/carol browser journey, forced
+- Still pending: full alice/bob/carol browser journey, forced
   network/empty browser states, meaningful commit-count verification and the
   3–5 minute video.
 - No source contribution percentage is claimed because no reliable measurement
-  was collected. No agent claim is used as evidence for a commit, deployment,
-  recording or clean-environment run.
+  was collected. No agent claim is used as evidence for a commit, deployment or
+  recording; clean-environment evidence comes from the lead's later rerun.
 
 ## Independent Closeout Round
 
@@ -225,3 +224,9 @@ and `docs/VERIFICATION.md`.
 - Delivery goal: distinguish agent reports from lead evidence and retain failed
   runs and pending work. Its Markdown structure check passed; the lead then added
   the later dependency, test, initialization, health and mobile-browser reruns.
+
+After all four module commits existed, the lead cloned the history into an ignored
+temporary directory, supplied the same official raw files as external input, and
+reran dependency sync, smoke processing/training, DB seed, tests, JavaScript checks
+and health. This converted clean-checkout reproduction from pending to passed;
+the formal demonstration recording remains unperformed.
