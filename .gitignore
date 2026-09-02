@@ -1,6 +1,8 @@
 # Raw MicroLens data must never be committed or redistributed.
 data/raw/
 data/processed/
+data/processed_blocked/
+data/staging/
 artifacts/
 *.db
 *.db-shm
@@ -26,6 +28,7 @@ htmlcov/
 node_modules/
 test-results/
 playwright-report/
+.tmp/
 
 # Local editor and operating-system files.
 .idea/
@@ -35,3 +38,8 @@ Thumbs.db
 
 # The assessment document is local input, not a project deliverable.
 *.docx
+_docx_extracted.txt
+
+# Local audit working papers are conversation artifacts, not repository deliverables.
+必要功能实现情况与后续完善计划_*.md
+加分项实现情况与后续优化方案_*.md

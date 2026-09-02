@@ -203,6 +203,10 @@ def test_personalized_feed_events_profile_dashboard_and_isolation(api_env) -> No
         duplicate = alice.post("/api/v1/events/batch", json={"events": [event]}).json()
         assert duplicate["accepted"] == 0
         assert duplicate["duplicates"] == 1
+        own_events = alice.get("/api/v1/me/events").json()["events"]
+        linked = next(row for row in own_events if row["event_id"] == event["event_id"])
+        assert linked["feed_type"] == "personalized"
+        assert linked["source"] == alice_feed["items"][0]["source"]
 
         cross_user = bob.post(
             "/api/v1/events/batch",
@@ -234,6 +238,63 @@ def test_personalized_feed_events_profile_dashboard_and_isolation(api_env) -> No
         assert {row["event_type"] for row in detail.json()["events"]} >= {"impression", "like"}
         debug = admin.get(f"/api/v1/admin/users/{alice_user['id']}/debug").json()
         assert debug["profile"]["version"] == profile_before["version"] + 1
+
+
+def test_dashboard_feed_breakdown_aggregates_each_behavior(api_env) -> None:
+    app, _, _ = api_env
+    with TestClient(app) as alice, TestClient(app) as admin:
+        _login(alice, "alice")
+        _login(admin, "admin", "admin-pass")
+
+        for feed_type in ("personalized", "popular", "explore"):
+            feed = alice.get(f"/api/v1/feeds/{feed_type}?limit=2").json()
+            first, second = feed["items"]
+            events = [
+                {
+                    "event_id": f"{feed_type}-click",
+                    "event_type": "click",
+                    "request_id": feed["request_id"],
+                    "item_id": first["item_id"],
+                    "position": first["position"],
+                    "client_timestamp": datetime.now(UTC).isoformat(),
+                },
+                {
+                    "event_id": f"{feed_type}-like",
+                    "event_type": "like",
+                    "request_id": feed["request_id"],
+                    "item_id": second["item_id"],
+                    "position": second["position"],
+                    "client_timestamp": datetime.now(UTC).isoformat(),
+                },
+                {
+                    "event_id": f"{feed_type}-not-interested",
+                    "event_type": "not_interested",
+                    "request_id": feed["request_id"],
+                    "item_id": first["item_id"],
+                    "position": first["position"],
+                    "client_timestamp": datetime.now(UTC).isoformat(),
+                },
+            ]
+            response = alice.post("/api/v1/events/batch", json={"events": events})
+            assert response.status_code == 200, response.text
+            assert response.json()["accepted"] == 3
+
+        overview = admin.get("/api/v1/admin/dashboard/overview").json()
+        assert overview["requests"] == 3
+        assert overview["exposures"] == 6
+        breakdown = {row["feed_type"]: row for row in overview["feed_breakdown"]}
+        assert set(breakdown) == {"personalized", "popular", "explore"}
+        for feed_type in breakdown:
+            assert breakdown[feed_type] == {
+                "feed_type": feed_type,
+                "requests": 1,
+                "exposures": 2,
+                "clicks": 1,
+                "likes": 1,
+                "not_interested": 1,
+                "ctr": 0.5,
+                "share": pytest.approx(1 / 3),
+            }
 
 
 def test_boost_offline_priority_restore_direct_api_and_audit(api_env) -> None:

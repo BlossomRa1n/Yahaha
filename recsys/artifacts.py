@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -61,7 +63,8 @@ def write_staged_artifact(
 ) -> Path:
     artifacts_dir = Path(artifacts_dir)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=artifacts_dir))
+    staging = artifacts_dir / f".staging-{manifest_base['model_version']}-{uuid.uuid4().hex}"
+    staging.mkdir()
     arrays = {
         "user_ids.npy": np.asarray(user_ids, dtype=np.int64),
         "item_ids.npy": np.asarray(item_ids, dtype=np.int64),

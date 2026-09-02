@@ -90,7 +90,7 @@ uv run python -m recsys.pipeline train --processed-dir data/processed --artifact
 - validation 指标供人工比较配置，test 只做最终报告；热门统计仅来自 train。MVP
   没有自动超参搜索，当前 `rank=32` 是显式选择。
 
-当前已生成并检查 full 产物 `svd-20260901T121430026505Z-cccf5c24`。test cohort
+当前已生成并检查 full 产物 `svd-20260902T022510026424Z-cccf5c24`。test cohort
 为 5,000 个用户，每个 query 100 个 negatives，warm-item coverage 为 `0.237160`：
 
 | 模型 | Recall@10 | NDCG@10 | HitRate@10 |
@@ -100,7 +100,9 @@ uv run python -m recsys.pipeline train --processed-dir data/processed --artifact
 | TruncatedSVD | 0.359176 | 0.208986 | 0.399000 |
 
 原始精度、validation 指标、cohort 哈希与协议保存在该版本的 `metrics.json` 和
-`evaluation.md`；README 仅做四舍五入展示。
+`evaluation.md`；README 仅做四舍五入展示。报告还包含 validation/test 各最多 5 个
+稳定匿名化的 SVD Badcase，给出正样本在同一 sampled candidate set 中的实际排名、
+未命中原因和 train-only 候选覆盖限制；这些排名不是全目录排名。
 
 ## 初始化与启动
 
@@ -116,7 +118,7 @@ uv run python -m app.cli init-db --items data/processed/items.csv --reset
 启动服务：
 
 ```powershell
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
 访问路径：
@@ -151,6 +153,20 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 5. 创建定向强推，验证目标 Feed；随后下线同一内容，确认所有 Feed 和直接 item API
    均不返回；恢复后在有效规则下重新可见，并检查审计前后状态与原因。
 
+Dashboard 的三路分组分别聚合请求、曝光、点击、喜欢和不感兴趣；概览同时展示
+延迟 P50/P95/P99，趋势面板可按小时或天查看请求、曝光、点击和喜欢。所有值均来自
+SQLite 请求、曝光和事件事实，不从前端常量生成。
+
+在线事件会同步更新画像和下一次个性化排序。需要为后续训练准备事件快照时可运行：
+
+```powershell
+uv run python -m app.cli export-events --out data/staging/online_events.csv
+```
+
+输出为 `user,item,timestamp,event_type,weight`，仅包含映射到官方用户的 click/like。
+它是明确标记的 **staging snapshot**，当前 train-only benchmark 不会自动读取该文件；
+合并线上时段前必须重新确定时间 cutoff 并重新生成 validation/test，不能沿用旧指标。
+
 详细 3–5 分钟录屏步骤见 `docs/DEMO.md`。
 
 ## 测试
@@ -159,6 +175,12 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 uv run pytest
 node --check web/api.js
 node --check web/app.js
+```
+
+已有本地官方数据和模型产物时，可用临时 SQLite 执行不污染现有数据库的完整验收：
+
+```powershell
+uv run python -m scripts.verify_official_e2e --items data/processed/items.csv --model-pointer artifacts/current.json
 ```
 
 仅运行不依赖服务的 Web 静态契约测试：
@@ -173,28 +195,28 @@ uv run pytest tests/test_web_contract.py -p no:cacheprovider
 
 ## 完成度声明
 
-已验证：当前 full 模型产物及其指标文件、15 项全仓 pytest、Web 静态契约断言、
+已验证：当前 full 模型产物、指标与 Badcase 报告、全仓 pytest、Web 静态契约断言、
 JavaScript 语法、19,220 内容数据库初始化、真实纵向 API 链路，以及 1440px/390px
 浏览器中的登录、Feed、行为画像、Dashboard、强推、下线、恢复和审计。浏览器控制台
 没有 warning/error。独立干净 checkout 也已按 README 完成锁定依赖、smoke pipeline、
 数据库初始化、全套测试、JavaScript 检查和健康检查。
 
 降级项：API 返回即视为 impression，不能证明进入浏览器 viewport；封面为本地占位；
-SQLite 同步更新画像；cursor 不是跨模型发布或运营变更的持久快照；事件当前只同步
-影响在线画像，尚未实现自动导出并合入下一轮离线训练。
+SQLite 同步更新画像；cursor 不是跨模型发布或运营变更的持久快照；事件可导出为
+后续训练 staging snapshot，但尚未自动建立新时间窗口、合并并触发训练。
 
 Mock：测试账号和占位封面是 seed/demo 辅助；自动化单元测试可生成合成数据。推荐
 列表、Dashboard 数字、事件、画像和运营状态不得使用固定前端 JSON。
 
 明确未做：注册、视频播放/托管、多模态、DSSM+DeepFM、Redis、异步任务、线上训练、
-复杂图表、CSV/告警、云部署。
+模型版本对比、CSV/告警、CI、云部署。
 
 当前风险：全量 CPU 已实测约 19.3 秒但峰值内存未测；SQLite 并发写入能力有限；
 恢复后的普通候选只恢复“可参与推荐”，演示需保留有效强推规则来稳定证明重新可见。
 
-若增加一周：增加 Playwright 多浏览器 E2E、事件批量重试队列、时间范围 Dashboard
-与趋势图、boost 管理/停用、离线训练消费在线事件、模型版本对比、结构化日志和延迟
-分位数监控，再评估 PostgreSQL 与异步训练任务。
+若增加一周：增加 Playwright 多浏览器 E2E、事件批量重试队列、boost 管理体验、
+带新时间 cutoff 的离线训练消费在线事件、模型版本对比和 CI，再评估 PostgreSQL 与
+异步训练任务。
 
 ## 交付文档
 

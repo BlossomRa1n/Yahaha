@@ -71,6 +71,7 @@ export const api = {
   myEvents: (limit = 50) => request(`/me/events${queryString({ limit })}`),
   item: (itemId) => request(`/items/${encodeURIComponent(itemId)}`),
   dashboard: () => request("/admin/dashboard/overview"),
+  timeseries: (metric, { from = null, to = null } = {}) => request(`/admin/dashboard/timeseries${queryString({ metric, from, to })}`),
   requestDebug: (requestId) => request(`/admin/requests/${encodeURIComponent(requestId)}`),
   userDebug: (userId) => request(`/admin/users/${encodeURIComponent(userId)}/debug`),
   users: () => request("/admin/users"),

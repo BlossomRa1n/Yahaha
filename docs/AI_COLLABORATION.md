@@ -230,3 +230,19 @@ temporary directory, supplied the same official raw files as external input, and
 reran dependency sync, smoke processing/training, DB seed, tests, JavaScript checks
 and health. This converted clean-checkout reproduction from pending to passed;
 the formal demonstration recording remains unperformed.
+
+## 2026-09-02 Mandatory Closure Round
+
+The lead assigned three non-overlapping specialist tasks and kept integration ownership:
+
+| Role | Goal and allowed files | Required evidence | Lead review outcome |
+|---|---|---|---|
+| Dashboard gap | Add per-feed request/exposure/click/like/not-interested/CTR/share aggregation and render it; `app/main.py`, `tests/test_api.py`, `web/app.js`, `web/index.html` only | Targeted API/Web tests and JS syntax | Accepted after reading the SQL/UI diff and rerunning the combined suite; behavior attribution uses the exact exposure tuple |
+| Model delivery | Add deterministic anonymized SVD Badcases and make event export semantically honest; `recsys/model.py`, `app/cli.py`, related model/export tests only | Targeted/full pytest, smoke training, artifact inspection | Accepted after a new full official train and artifact inspection; rejected the old duplicate-row weighting claim |
+| Observability tests | Test latency quantiles, Dashboard time series and JSON request logs; `tests/test_observability.py` only | Focused tests with exact boundary cases | Tests exposed a trailing zero bucket at an exact `[from,to)` boundary; lead fixed production code and reran the suite |
+
+The lead then reviewed the integrated production diff and executed full pytest, JavaScript syntax,
+Python compilation, official-data smoke training, the official E2E script and browser workflows.
+One additional UI contract mismatch was found during parent review: the model table error row retained
+the old five-column span after the data-version column was added. It was corrected to six and verified
+with the final Web checks. Agent summaries were not used as completion evidence without these reruns.

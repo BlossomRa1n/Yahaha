@@ -37,6 +37,22 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("zh-CN", { hour12: false });
 }
 
+function formatMs(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
+  return `${Number(value).toFixed(1)} ms`;
+}
+
+function metricLabel(metric) {
+  return { requests: "请求", exposures: "曝光", clicks: "点击", likes: "喜欢" }[metric] || metric;
+}
+
+function formatBucketLabel(t, bucket) {
+  const date = new Date(t);
+  if (Number.isNaN(date.getTime())) return t;
+  if (bucket === "hour") return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
+}
+
 function displayError(error) {
   if (!(error instanceof ApiError)) return "发生未知错误，请重试。";
   const prefix = error.status === 403 ? "权限不足：" : "";
@@ -342,8 +358,9 @@ async function loadProfile() {
       formatDate(event.received_at || event.client_timestamp),
       event.event_type,
       event.item_id,
+      `${event.feed_type || "unknown"} / ${event.source || "unknown"}`,
       event.request_id,
-    ], 4, "暂无行为记录");
+    ], 5, "暂无行为记录");
     hidePanelState(panel);
   } catch (error) {
     setPanelState(panel, displayError(error), { type: "error", retry: loadProfile });
@@ -379,6 +396,12 @@ function renderDashboard(overview) {
     ["喜欢", overview.likes], ["下线内容", overview.offline_items], ["生效强推", overview.active_boosts],
     ["当前模型", overview.current_model_version || "—"],
   ];
+  const latency = overview.latency || {};
+  metrics.push(
+    ["延迟 P50", formatMs(latency.p50)],
+    ["延迟 P95", formatMs(latency.p95)],
+    ["延迟 P99", formatMs(latency.p99)],
+  );
   const grid = $("#metric-grid");
   grid.replaceChildren();
   metrics.forEach(([label, value]) => {
@@ -396,9 +419,11 @@ function renderDashboard(overview) {
     formatNumber(feed.requests),
     formatNumber(feed.exposures),
     formatNumber(feed.clicks),
+    formatNumber(feed.likes),
+    formatNumber(feed.not_interested),
     formatPercent(feed.ctr ?? (Number(feed.exposures) ? Number(feed.clicks) / Number(feed.exposures) : 0)),
     formatPercent(feed.share ?? (exposureTotal ? Number(feed.exposures) / exposureTotal : 0)),
-  ], 6, "暂无信息流请求");
+  ], 8, "暂无信息流请求");
 
   renderRows($("#top-items-body"), overview.top_items || [], (item) => [
     item.title ? `${item.title} (${item.item_id})` : item.item_id,
@@ -407,19 +432,109 @@ function renderDashboard(overview) {
   ], 5, "暂无热门内容数据");
 }
 
+function renderTimeseries(payload) {
+  const chart = $("#timeseries-chart");
+  chart.replaceChildren();
+  const points = payload?.points || [];
+  if (!points.length) {
+    chart.append(createElement("div", "empty", "该时间范围内暂无数据。"));
+    return;
+  }
+  const width = 600;
+  const height = 200;
+  const padL = 38;
+  const padR = 12;
+  const padT = 16;
+  const padB = 26;
+  const maxValue = Math.max(1, ...points.map((p) => p.value));
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("class", "timeseries-svg");
+
+  const x = (i) => padL + (points.length === 1 ? 0 : (i * (width - padL - padR)) / (points.length - 1));
+  const y = (v) => padT + (1 - v / maxValue) * (height - padT - padB);
+
+  for (let s = 0; s <= 4; s += 1) {
+    const value = Math.round((maxValue * s) / 4);
+    const gy = padT + (s / 4) * (height - padT - padB);
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("x1", padL); line.setAttribute("x2", width - padR);
+    line.setAttribute("y1", gy); line.setAttribute("y2", gy);
+    line.setAttribute("class", "timeseries-grid");
+    svg.append(line);
+    const label = document.createElementNS(svgNS, "text");
+    label.setAttribute("x", padL - 6); label.setAttribute("y", gy + 3);
+    label.setAttribute("class", "timeseries-label");
+    label.setAttribute("text-anchor", "end");
+    label.textContent = String(value);
+    svg.append(label);
+  }
+
+  const linePath = document.createElementNS(svgNS, "polyline");
+  linePath.setAttribute("points", points.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" "));
+  linePath.setAttribute("class", "timeseries-line");
+  svg.append(linePath);
+
+  points.forEach((p, i) => {
+    const dot = document.createElementNS(svgNS, "circle");
+    dot.setAttribute("cx", x(i).toFixed(1));
+    dot.setAttribute("cy", y(p.value).toFixed(1));
+    dot.setAttribute("r", "2.5");
+    dot.setAttribute("class", "timeseries-dot");
+    svg.append(dot);
+  });
+
+  const xIndices = points.length === 1 ? [0] : [0, points.length - 1];
+  xIndices.forEach((i) => {
+    const label = document.createElementNS(svgNS, "text");
+    label.setAttribute("x", x(i).toFixed(1));
+    label.setAttribute("y", height - 6);
+    label.setAttribute("class", "timeseries-label");
+    label.setAttribute("text-anchor", i === 0 ? "start" : "end");
+    label.textContent = formatBucketLabel(points[i].t, payload.bucket);
+    svg.append(label);
+  });
+
+  chart.append(svg);
+  chart.append(createElement("div", "muted", `${metricLabel(payload.metric)} · ${payload.bucket === "hour" ? "按小时" : "按天"} · ${formatDate(payload.range?.from)} 至 ${formatDate(payload.range?.to)}`));
+}
+
+async function loadTimeseries() {
+  const chart = $("#timeseries-chart");
+  const metric = $("#timeseries-metric")?.value || "requests";
+  chart.replaceChildren(createElement("div", "muted", "正在加载趋势..."));
+  try {
+    renderTimeseries(await api.timeseries(metric));
+  } catch (error) {
+    chart.replaceChildren(createElement("div", "empty", displayError(error)));
+  }
+}
+
 function renderModels(response) {
+  const metricSummary = (metrics) => {
+    const svd = metrics?.test?.models?.svd;
+    if (svd) {
+      return [
+        ["Recall@10", svd["recall@10"]],
+        ["NDCG@10", svd["ndcg@10"]],
+        ["HitRate@10", svd["hitrate@10"]],
+      ].map(([label, value]) => `${label} ${Number(value).toFixed(4)}`).join(" · ");
+    }
+    return Object.entries(metrics || {})
+      .filter(([, value]) => typeof value === "number")
+      .map(([key, value]) => `${key}: ${Number(value).toFixed(4)}`)
+      .join(" · ") || "—";
+  };
   renderRows($("#models-body"), response.models || [], (model) => [
     model.model_version,
+    model.data_version || "—",
     model.algorithm,
     model.status === "active" || model.model_version === response.current_model_version ? "当前" : model.status,
     formatDate(model.activated_at || model.created_at),
-    Object.entries(model.metrics || {}).map(([key, value]) => {
-      const displayed = typeof value === "number"
-        ? value.toFixed(4)
-        : typeof value === "object" ? JSON.stringify(value) : value;
-      return `${key}: ${displayed}`;
-    }).join(" · ") || "—",
-  ], 5, "暂无已登记模型");
+    metricSummary(model.metrics),
+  ], 6, "暂无已登记模型");
 }
 
 async function loadDashboard() {
@@ -435,8 +550,9 @@ async function loadDashboard() {
   if (modelsResult.status === "fulfilled") {
     renderModels(modelsResult.value);
   } else {
-    renderRows($("#models-body"), [], () => [], 5, displayError(modelsResult.reason));
+    renderRows($("#models-body"), [], () => [], 6, displayError(modelsResult.reason));
   }
+  await loadTimeseries();
 }
 
 async function runDiagnostic(kind, id) {
@@ -667,6 +783,7 @@ function bindEvents() {
   $("#load-more-button").addEventListener("click", () => loadFeed(false));
   $("#profile-button").addEventListener("click", loadProfile);
   $("#dashboard-refresh").addEventListener("click", loadDashboard);
+  $("#timeseries-metric").addEventListener("change", loadTimeseries);
   $("#request-debug-form").addEventListener("submit", (event) => { event.preventDefault(); runDiagnostic("request", event.currentTarget.request_id.value.trim()); });
   $("#user-debug-form").addEventListener("submit", (event) => { event.preventDefault(); runDiagnostic("user", event.currentTarget.user_id.value.trim()); });
   $("#item-search-form").addEventListener("submit", (event) => {

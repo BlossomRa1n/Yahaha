@@ -40,7 +40,7 @@ evaluation cohort and negative sets.
 
 Artifacts never use pickle. `manifest.json` references NumPy arrays and a
 popularity file with hashes, shapes, data version, training configuration,
-metric definitions and results. Publication validates every file before an
+metric definitions, results and anonymized query-level SVD bad cases. Publication validates every file before an
 atomic `artifacts/current.json` replacement. A failed training or load does not
 replace the last usable pointer; serving falls back to popular/explore.
 
@@ -68,9 +68,11 @@ the server verifies request, item and position against that user's exposure.
 `event_id` is an idempotency key. In one transaction the server writes the event,
 updates the user-item state and increments `profiles.version`. Click and like add
 positive item affinity; not_interested applies a strong negative weight. The next
-personalized request reads this state synchronously. A future batch exporter can
-add accepted events to retraining input; this MVP does not implement that export
-or claim online training.
+personalized request reads this state synchronously. `app.cli export-events`
+writes a staging-only `user,item,timestamp,event_type,weight` snapshot for mapped
+dataset users. The current benchmark deliberately does not consume it: a future
+job must establish a new chronological cutoff and regenerate validation/test
+before merging online periods. The MVP does not claim automatic or online training.
 
 ## Operations Flow
 
@@ -78,7 +80,9 @@ Only an administrator session can mutate item status or boost campaigns. Status
 change and its before/after audit row share a transaction. Every item-returning
 path, including direct item lookup and fallback, calls the same online filter.
 Dashboard data comes from users, recommendation requests, exposures, events,
-items, model versions and operations, never from frontend constants.
+items, model versions and operations, never from frontend constants. Per-feed
+breakdown includes requests, exposures, clicks, likes and negative feedback.
+Latency percentiles and hourly/daily trends use the same server-side facts.
 
 ## Core Entities
 
@@ -103,6 +107,10 @@ behavior/profile updates and operations/audits each use explicit transactions.
   metrics while client time remains diagnostic.
 - Database unavailable/locked past timeout: return an explicit error; do not
   fabricate a response or metric.
+
+Every HTTP response carries an API request ID. The access logger emits one JSON
+record with request ID, method, path, status and duration, independently from the
+feed request ID used for recommendation exposure lineage.
 
 ## Security Boundary
 

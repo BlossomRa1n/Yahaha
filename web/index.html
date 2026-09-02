@@ -110,12 +110,25 @@
             <div id="metric-grid" class="metric-grid"></div>
           </section>
 
+          <section aria-labelledby="timeseries-title">
+            <div class="section-heading">
+              <h2 id="timeseries-title">时间趋势</h2>
+              <select id="timeseries-metric" aria-label="选择趋势指标">
+                <option value="requests">请求</option>
+                <option value="exposures">曝光</option>
+                <option value="clicks">点击</option>
+                <option value="likes">喜欢</option>
+              </select>
+            </div>
+            <div id="timeseries-chart" class="timeseries-chart" role="img" aria-label="指标时间趋势折线图"></div>
+          </section>
+
           <div class="two-column-layout">
             <section aria-labelledby="feed-breakdown-title">
               <h2 id="feed-breakdown-title">信息流分布</h2>
               <div class="table-scroll">
                 <table>
-                  <thead><tr><th>信息流</th><th>请求</th><th>曝光</th><th>点击</th><th>CTR</th><th>占比</th></tr></thead>
+                  <thead><tr><th>信息流</th><th>请求</th><th>曝光</th><th>点击</th><th>喜欢</th><th>不感兴趣</th><th>CTR</th><th>占比</th></tr></thead>
                   <tbody id="feed-breakdown-body"></tbody>
                 </table>
               </div>
@@ -152,7 +165,7 @@
             <h2 id="models-title">模型运行</h2>
             <div class="table-scroll">
               <table>
-                <thead><tr><th>版本</th><th>算法</th><th>状态</th><th>训练时间</th><th>指标</th></tr></thead>
+                <thead><tr><th>模型版本</th><th>数据版本</th><th>算法</th><th>状态</th><th>训练时间</th><th>Test SVD 指标</th></tr></thead>
                 <tbody id="models-body"></tbody>
               </table>
             </div>
@@ -211,7 +224,7 @@
       <div id="profile-state" class="state-panel" role="status">等待加载画像</div>
       <dl id="profile-summary" class="detail-list"></dl>
       <h3>最近行为</h3>
-      <div class="table-scroll"><table><thead><tr><th>时间</th><th>行为</th><th>内容</th><th>Request ID</th></tr></thead><tbody id="profile-events-body"></tbody></table></div>
+      <div class="table-scroll"><table><thead><tr><th>时间</th><th>行为</th><th>内容</th><th>来源</th><th>Request ID</th></tr></thead><tbody id="profile-events-body"></tbody></table></div>
     </dialog>
 
     <dialog id="status-dialog" class="modal compact-modal">

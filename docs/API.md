@@ -71,12 +71,14 @@ item or position is rejected.
 ## User Data
 
 - `GET /me/profile`
-- `GET /me/events?limit=50`
+- `GET /me/events?limit=50` returns each persisted event with its trusted
+  `feed_type` and exposure `source` resolved server-side.
 - `GET /items/{item_id}` returns only online content.
 
 ## Administration
 
 - `GET /admin/dashboard/overview`
+- `GET /admin/dashboard/timeseries?metric=requests|exposures|clicks|likes&from=&to=`
 - `GET /admin/requests/{request_id}`
 - `GET /admin/users/{user_id}/debug`
 - `GET /admin/items?q=&status=&limit=&offset=`
@@ -89,6 +91,18 @@ item or position is rejected.
 - `GET /admin/models`
 
 Status, boost and audit mutations are server-authorized and transactional.
+Dashboard overview returns DB-derived totals, latency percentiles, top items and
+three `feed_breakdown` rows containing `requests`, `exposures`, `clicks`, `likes`,
+`not_interested`, `ctr` and exposure `share`. Timeseries uses a half-open
+`[from,to)` range and hour buckets up to 48 hours, otherwise day buckets.
+
+## Future-training Event Snapshot
+
+`python -m app.cli export-events --out data/staging/online_events.csv` writes one
+row per accepted mapped-user click/like with columns
+`user,item,timestamp,event_type,weight`. This file is staging metadata and is not
+consumed by the current train-only benchmark. A consumer must create a new
+chronological split; old validation/test metrics cannot be reused after merging.
 
 ## Errors
 
@@ -117,4 +131,6 @@ artifacts/current.json
 
 The manifest includes schema version, data version, algorithm, dimensions,
 training configuration/time, evaluation protocol/metrics, file hashes and array
-shapes. No Python pickle is accepted.
+shapes. `metrics.json` and `evaluation.md` also include stable anonymized SVD
+Badcases with sampled-candidate ranks and coverage limitations. No Python pickle
+is accepted.

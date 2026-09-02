@@ -201,6 +201,53 @@ def evaluate_queries(
     }
 
 
+def _anonymous_id(prefix: str, value: int) -> str:
+    digest = hashlib.sha256(f"microlens-evaluation:{prefix}:{value}".encode()).hexdigest()
+    return f"{prefix}-{digest[:10]}"
+
+
+def analyze_badcases(
+    queries: Sequence[EvaluationQuery],
+    score_function: Callable[[int, np.ndarray], np.ndarray],
+    *,
+    k: int = METRIC_K,
+    limit: int = 5,
+) -> list[dict[str, object]]:
+    """Return deterministic, anonymized query-level misses for the model report."""
+    badcases: list[dict[str, object]] = []
+    for query in queries:
+        candidates = np.asarray(
+            [*query.positive_item_ids, *query.negative_item_ids], dtype=np.int64
+        )
+        scores = np.asarray(score_function(query.user_id, candidates), dtype=np.float64)
+        if scores.shape != candidates.shape or not np.isfinite(scores).all():
+            raise ModelTrainingError("score function returned invalid scores")
+        order = np.lexsort((candidates, -scores))
+        ranks = {int(candidates[index]): rank for rank, index in enumerate(order, start=1)}
+        missed = [item_id for item_id in query.positive_item_ids if ranks[item_id] > k]
+        if not missed:
+            continue
+        positive_ranks = [ranks[item_id] for item_id in query.positive_item_ids]
+        badcases.append(
+            {
+                "candidate_count": len(candidates),
+                "positive_count": len(query.positive_item_ids),
+                "positive_item_ids": [
+                    _anonymous_id("i", item_id) for item_id in query.positive_item_ids
+                ],
+                "positive_ranks": positive_ranks,
+                "reason": "no_positive_in_top_k"
+                if min(positive_ranks) > k
+                else "some_positives_below_top_k",
+                "top_k": k,
+                "user_id": _anonymous_id("u", query.user_id),
+            }
+        )
+        if len(badcases) == limit:
+            break
+    return badcases
+
+
 def _random_scores(seed: int, user_id: int, item_ids: np.ndarray) -> np.ndarray:
     mask = (1 << 64) - 1
     values: list[float] = []
@@ -242,6 +289,35 @@ def _evaluation_markdown(metrics: dict[str, object]) -> str:
                 f"{values['ndcg@10']:.6f} | {values['hitrate@10']:.6f} |"
             )
         lines.append("")
+        lines.extend(
+            [
+                "### Reproducible SVD bad cases",
+                "",
+                "Identifiers below are stable one-way aliases. Ranks are measured against the same",
+                "sampled candidate set used by the metrics, not against the full catalog.",
+                "",
+                "| User | Positive items | Positive ranks | Candidates | Reason |",
+                "|---|---|---:|---:|---|",
+            ]
+        )
+        badcases = split.get("badcases", {}).get("svd", [])
+        if badcases:
+            for case in badcases:
+                lines.append(
+                    f"| {case['user_id']} | {', '.join(case['positive_item_ids'])} | "
+                    f"{', '.join(map(str, case['positive_ranks']))} | "
+                    f"{case['candidate_count']} | {case['reason']} |"
+                )
+        else:
+            lines.append("| none in evaluated cohort | - | - | - | - |")
+        lines.extend(
+            [
+                "",
+                f"Coverage limitation: {split['cohort']['target_positive_interactions'] - split['cohort']['scorable_positive_interactions']} "
+                "target positives were not rankable because their items were absent from the train-only candidate universe.",
+                "",
+            ]
+        )
     lines.extend(
         [
             "## Interpretation",
@@ -386,6 +462,7 @@ def train_model(
                 "random": evaluate_queries(queries, random_score),
                 "svd": evaluate_queries(queries, svd_score),
             },
+            "badcases": {"svd": analyze_badcases(queries, svd_score)},
         }
 
     config = {

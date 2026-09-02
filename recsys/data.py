@@ -5,7 +5,8 @@ import hashlib
 import json
 import math
 import os
-import tempfile
+import shutil
+import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -305,8 +306,10 @@ def prepare_data(raw_dir: Path, out_dir: Path, seed: int = 20260901) -> dict[str
 
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".prepare-", dir=out_dir.parent) as temp_name:
-        staging = Path(temp_name)
+    data_version = _data_version(raw_files, seed)
+    staging = out_dir.parent / f".prepare-{data_version}-{uuid.uuid4().hex}"
+    staging.mkdir()
+    try:
         for split_name, rows in splits.items():
             _write_interactions(staging / f"{split_name}.csv", rows)
         _write_items(staging / "items.csv", titles, stats)
@@ -321,7 +324,7 @@ def prepare_data(raw_dir: Path, out_dir: Path, seed: int = 20260901) -> dict[str
         ]
         summary: dict[str, object] = {
             "schema_version": 1,
-            "data_version": _data_version(raw_files, seed),
+            "data_version": data_version,
             "dataset": "MicroLens-50K",
             "seed": seed,
             "raw_files": raw_files,
@@ -389,5 +392,6 @@ def prepare_data(raw_dir: Path, out_dir: Path, seed: int = 20260901) -> dict[str
         )
         for name in [*generated_names, "summary.json"]:
             os.replace(staging / name, out_dir / name)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     return summary
-

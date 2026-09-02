@@ -66,11 +66,12 @@ Accepted degradations:
   model publication or operations changes.
 - Covers use deterministic local placeholders. The 637 MB official cover archive
   is deliberately not downloaded.
-- Profile updates are synchronous SQLite updates. Exporting accepted events into
-  a later retraining batch is not implemented in this MVP.
+- Profile updates are synchronous SQLite updates. Accepted mapped-user click/like
+  events can be exported to a staging snapshot, but automatic chronological merge,
+  split regeneration and retraining are not implemented in this MVP.
 
 Out of scope: registration, video hosting/playback, multimodal features, DSSM +
-DeepFM, Redis, async workers, cloud deployment, complex charts, distributed
+DeepFM, Redis, async workers, cloud deployment, model comparison, distributed
 serving, and online model training.
 
 ## Critical Path and Risks

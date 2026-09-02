@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import secrets
 import sqlite3
 import time
@@ -22,6 +23,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .artifacts import ArtifactStore, ModelArtifact
 from .config import Settings
 from .db import Database
+from .logging import configure_logging
 from .recommendation import RecommendationService
 from .schemas import BoostBody, BoostStatusBody, EventBatch, ItemStatusBody, LoginBody
 from .security import (
@@ -33,6 +35,8 @@ from .security import (
     utc_now,
     verify_password,
 )
+
+access_logger = logging.getLogger("app.access")
 
 
 class APIError(Exception):
@@ -106,6 +110,35 @@ def _canonical_datetime(value: datetime) -> str:
     return isoformat(value.astimezone(UTC))
 
 
+def _percentiles(values: list[float]) -> dict[str, float]:
+    if not values:
+        return {"min": 0.0, "p50": 0.0, "p95": 0.0, "p99": 0.0, "max": 0.0}
+    ordered = sorted(values)
+    n = len(ordered)
+
+    def quantile(q: float) -> float:
+        position = q * (n - 1)
+        lower = int(position)
+        upper = min(lower + 1, n - 1)
+        weight = position - lower
+        return ordered[lower] * (1 - weight) + ordered[upper] * weight
+
+    return {
+        "min": float(ordered[0]),
+        "p50": quantile(0.50),
+        "p95": quantile(0.95),
+        "p99": quantile(0.99),
+        "max": float(ordered[-1]),
+    }
+
+
+def _iso_to_epoch_seconds(value: str) -> int:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return int(parsed.timestamp())
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     database = Database(settings.database_path)
@@ -126,11 +159,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.artifacts = artifacts
     app.state.recommender = recommender
 
+    configure_logging()
+
     @app.middleware("http")
     async def request_context(request: Request, call_next: Any) -> Response:
         request.state.api_request_id = str(uuid.uuid4())
+        started = time.perf_counter()
         response = await call_next(request)
         response.headers["X-Request-ID"] = request.state.api_request_id
+        access_logger.info(
+            "request completed",
+            extra={
+                "request_id": request.state.api_request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": round((time.perf_counter() - started) * 1000.0, 3),
+            },
+        )
         return response
 
     @app.exception_handler(APIError)
@@ -282,10 +328,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def recent_events(conn: sqlite3.Connection, user_id: str, limit: int) -> list[dict[str, Any]]:
         rows = conn.execute(
             """
-            SELECT event_id, event_type, request_id, item_id, position,
-                   client_timestamp, received_at
-            FROM events WHERE user_id = ?
-            ORDER BY received_at DESC, rowid DESC LIMIT ?
+            SELECT ev.event_id, ev.event_type, ev.request_id, ev.item_id,
+                   ev.position, ev.client_timestamp, ev.received_at,
+                   r.feed_type, e.source
+            FROM events ev
+            JOIN exposures e ON e.request_id = ev.request_id
+                            AND e.user_id = ev.user_id
+                            AND e.item_id = ev.item_id
+                            AND e.position = ev.position
+            JOIN recommendation_requests r ON r.request_id = ev.request_id
+            WHERE ev.user_id = ?
+            ORDER BY ev.received_at DESC, ev.rowid DESC LIMIT ?
             """,
             (user_id, limit),
         ).fetchall()
@@ -296,6 +349,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "request_id": row["request_id"],
                 "item_id": str(row["item_id"]),
                 "position": int(row["position"]),
+                "feed_type": row["feed_type"],
+                "source": row["source"],
                 "client_timestamp": row["client_timestamp"],
                 "received_at": row["received_at"],
             }
@@ -714,6 +769,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         start = _parse_datetime(from_value, end - timedelta(hours=24))
         if start >= end:
             raise APIError(422, "invalid_time_range", "from must be earlier than to")
+        if end - start > timedelta(days=366):
+            raise APIError(422, "invalid_time_range", "time range must not exceed 366 days")
         start_text, end_text = isoformat(start), isoformat(end)
         with database.connect() as conn:
             users = int(conn.execute("SELECT COUNT(*) FROM users WHERE role = 'user'").fetchone()[0])
@@ -755,6 +812,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     (start_text, end_text),
                 ).fetchone()[0]
             )
+            latency_rows = conn.execute(
+                "SELECT latency_ms FROM recommendation_requests WHERE created_at >= ? AND created_at < ?",
+                (start_text, end_text),
+            ).fetchall()
+            latency = _percentiles([float(row[0]) for row in latency_rows])
             offline_items = int(
                 conn.execute("SELECT COUNT(*) FROM items WHERE status = 'offline'").fetchone()[0]
             )
@@ -770,19 +832,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             feed_rows = conn.execute(
                 """
-                SELECT r.feed_type,
-                       COUNT(DISTINCT r.request_id) AS requests,
-                       COUNT(DISTINCT e.id) AS exposures,
-                       COUNT(DISTINCT CASE WHEN ev.event_type = 'click' THEN ev.event_id END) AS clicks
-                FROM recommendation_requests r
-                LEFT JOIN exposures e ON e.request_id = r.request_id
-                LEFT JOIN events ev ON ev.request_id = e.request_id
-                                   AND ev.item_id = e.item_id
-                                   AND ev.position = e.position
-                WHERE r.created_at >= ? AND r.created_at < ?
-                GROUP BY r.feed_type
+                WITH feed_metrics AS (
+                    SELECT feed_type, COUNT(*) AS requests, 0 AS exposures,
+                           0 AS clicks, 0 AS likes, 0 AS not_interested
+                    FROM recommendation_requests
+                    WHERE created_at >= ? AND created_at < ?
+                    GROUP BY feed_type
+                    UNION ALL
+                    SELECT r.feed_type, 0, COUNT(*), 0, 0, 0
+                    FROM exposures e
+                    JOIN recommendation_requests r ON r.request_id = e.request_id
+                    WHERE e.created_at >= ? AND e.created_at < ?
+                    GROUP BY r.feed_type
+                    UNION ALL
+                    SELECT r.feed_type, 0, 0,
+                           COUNT(DISTINCT CASE WHEN ev.event_type = 'click' THEN ev.event_id END),
+                           COUNT(DISTINCT CASE WHEN ev.event_type = 'like' THEN ev.event_id END),
+                           COUNT(DISTINCT CASE WHEN ev.event_type = 'not_interested' THEN ev.event_id END)
+                    FROM events ev
+                    JOIN exposures e ON e.request_id = ev.request_id
+                                    AND e.item_id = ev.item_id
+                                    AND e.position = ev.position
+                    JOIN recommendation_requests r ON r.request_id = ev.request_id
+                    WHERE ev.received_at >= ? AND ev.received_at < ?
+                    GROUP BY r.feed_type
+                )
+                SELECT feed_type,
+                       SUM(requests) AS requests,
+                       SUM(exposures) AS exposures,
+                       SUM(clicks) AS clicks,
+                       SUM(likes) AS likes,
+                       SUM(not_interested) AS not_interested
+                FROM feed_metrics
+                GROUP BY feed_type
                 """,
-                (start_text, end_text),
+                (start_text, end_text, start_text, end_text, start_text, end_text),
             ).fetchall()
             feed_values = {
                 row["feed_type"]: {
@@ -790,6 +874,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "requests": int(row["requests"]),
                     "exposures": int(row["exposures"]),
                     "clicks": int(row["clicks"]),
+                    "likes": int(row["likes"]),
+                    "not_interested": int(row["not_interested"]),
+                    "ctr": int(row["clicks"]) / int(row["exposures"])
+                    if row["exposures"]
+                    else 0.0,
+                    "share": int(row["exposures"]) / exposures_count
+                    if exposures_count
+                    else 0.0,
                 }
                 for row in feed_rows
             }
@@ -820,6 +912,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "exposures": exposures_count,
             "clicks": clicks,
             "likes": likes,
+            "latency": latency,
             "ctr": clicks / exposures_count if exposures_count else 0.0,
             "offline_items": offline_items,
             "active_boosts": active_boosts,
@@ -827,7 +920,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "feed_breakdown": [
                 feed_values.get(
                     feed_type,
-                    {"feed_type": feed_type, "requests": 0, "exposures": 0, "clicks": 0},
+                    {
+                        "feed_type": feed_type,
+                        "requests": 0,
+                        "exposures": 0,
+                        "clicks": 0,
+                        "likes": 0,
+                        "not_interested": 0,
+                        "ctr": 0.0,
+                        "share": 0.0,
+                    },
                 )
                 for feed_type in ("personalized", "popular", "explore")
             ],
@@ -842,6 +944,66 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 }
                 for row in top_rows
             ],
+        }
+
+    @app.get("/api/v1/admin/dashboard/timeseries")
+    def dashboard_timeseries(
+        request: Request,
+        metric: str = Query(default="requests"),
+        from_value: str | None = Query(default=None, alias="from"),
+        to_value: str | None = Query(default=None, alias="to"),
+    ) -> dict[str, Any]:
+        admin_user(request)
+        if metric not in ("requests", "exposures", "clicks", "likes"):
+            raise APIError(422, "invalid_metric", "metric must be one of requests/exposures/clicks/likes")
+        end = _parse_datetime(to_value, utc_now())
+        start = _parse_datetime(from_value, end - timedelta(hours=24))
+        if start >= end:
+            raise APIError(422, "invalid_time_range", "from must be earlier than to")
+        if end - start > timedelta(days=366):
+            raise APIError(422, "invalid_time_range", "time range must not exceed 366 days")
+        start_text, end_text = isoformat(start), isoformat(end)
+
+        span = end - start
+        bucket_seconds = 3600 if span <= timedelta(hours=48) else 86400
+        bucket = "hour" if bucket_seconds == 3600 else "day"
+
+        sql = {
+            "requests": "SELECT created_at FROM recommendation_requests WHERE created_at >= ? AND created_at < ?",
+            "exposures": "SELECT created_at FROM exposures WHERE created_at >= ? AND created_at < ?",
+            "clicks": "SELECT received_at FROM events WHERE event_type = 'click' AND received_at >= ? AND received_at < ?",
+            "likes": "SELECT received_at FROM events WHERE event_type = 'like' AND received_at >= ? AND received_at < ?",
+        }[metric]
+
+        with database.connect() as conn:
+            raw = conn.execute(sql, (start_text, end_text)).fetchall()
+
+        buckets: dict[int, int] = {}
+        for row in raw:
+            slot = (_iso_to_epoch_seconds(row[0]) // bucket_seconds) * bucket_seconds
+            buckets[slot] = buckets.get(slot, 0) + 1
+
+        start_slot = (int(start.timestamp()) // bucket_seconds) * bucket_seconds
+        # The query range is [start, end), so an exact bucket boundary belongs
+        # to the preceding bucket rather than creating a trailing zero point.
+        end_inclusive = end - timedelta(microseconds=1)
+        end_slot = (int(end_inclusive.timestamp()) // bucket_seconds) * bucket_seconds
+        points: list[dict[str, Any]] = []
+        slot = start_slot
+        while slot <= end_slot:
+            points.append(
+                {
+                    "t": datetime.fromtimestamp(slot, tz=UTC).isoformat().replace("+00:00", "Z"),
+                    "value": buckets.get(slot, 0),
+                }
+            )
+            slot += bucket_seconds
+
+        return {
+            "metric": metric,
+            "bucket": bucket,
+            "range": {"from": start_text, "to": end_text},
+            "points": points,
         }
 
     @app.get("/api/v1/admin/requests/{feed_request_id}")

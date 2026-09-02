@@ -5,6 +5,7 @@ import csv
 import json
 import math
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -141,6 +142,83 @@ def init_database(args: argparse.Namespace) -> int:
     return 0
 
 
+# This is staging metadata, not a claim that the current binary SVD consumes the weight.
+EXPORT_EVENT_WEIGHTS = {"click": 1, "like": 3}
+
+
+def _iso_to_epoch_ms(value: str) -> int:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return int(round(parsed.timestamp() * 1000))
+
+
+def export_events(conn: Any, out_path: Path) -> dict[str, Any]:
+    """Export real users' click/like events as a future-training staging snapshot.
+
+    Each source event remains one row. ``weight`` preserves the intended signal strength,
+    but the current train-only benchmark intentionally does not consume this file. A future
+    retraining job must establish a new chronological cutoff before merging it.
+    """
+    rows = conn.execute(
+        """
+        SELECT e.event_type, u.dataset_user_id, e.item_id, e.received_at
+        FROM events e
+        JOIN users u ON u.id = e.user_id
+        WHERE u.dataset_user_id IS NOT NULL
+          AND e.event_type IN ('click', 'like')
+        ORDER BY e.received_at, e.event_id
+        """
+    ).fetchall()
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    events_seen = 0
+    rows_written = 0
+    skipped = 0
+    with out_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(["user", "item", "timestamp", "event_type", "weight"])
+        for row in rows:
+            try:
+                user_id = int(row["dataset_user_id"])
+                item_id = int(row["item_id"])
+                timestamp_ms = _iso_to_epoch_ms(row["received_at"])
+            except (TypeError, ValueError):
+                skipped += 1
+                continue
+            writer.writerow(
+                [
+                    user_id,
+                    item_id,
+                    timestamp_ms,
+                    row["event_type"],
+                    EXPORT_EVENT_WEIGHTS[row["event_type"]],
+                ]
+            )
+            rows_written += 1
+            events_seen += 1
+    return {
+        "output": str(out_path),
+        "events": events_seen,
+        "rows": rows_written,
+        "skipped": skipped,
+        "weights": EXPORT_EVENT_WEIGHTS,
+        "consumed_by_training": False,
+        "usage": "staging_only_requires_new_chronological_split",
+    }
+
+
+def export_events_command(args: argparse.Namespace) -> int:
+    settings = Settings.from_env()
+    database = Database(settings.database_path)
+    out_path = Path(args.out).resolve()
+    with database.connect() as conn:
+        result = export_events(conn, out_path)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="MicroLens service administration")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -156,6 +234,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicitly delete and recreate the configured SQLite database",
     )
     init_parser.set_defaults(handler=init_database)
+    export_parser = subparsers.add_parser(
+        "export-events",
+        help="Export real users' click/like events as a future-training staging snapshot",
+    )
+    export_parser.add_argument(
+        "--out",
+        default="data/staging/online_events.csv",
+        help="Output CSV path (default: data/staging/online_events.csv)",
+    )
+    export_parser.set_defaults(handler=export_events_command)
     return parser
 
 
