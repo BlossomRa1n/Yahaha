@@ -32,6 +32,8 @@ def test_required_static_files_and_dom_contract() -> None:
     parser.feed(_read("index.html"))
     required_ids = {
         "login-form",
+        "login-mode",
+        "register-mode",
         "feed-view",
         "feed-tabs",
         "feed-list",
@@ -82,7 +84,26 @@ def test_events_use_exposure_linkage_without_identity_override() -> None:
     for field in ("event_id", "event_type", "request_id", "item_id", "position", "client_timestamp"):
         assert field in event_body
     assert "user_id" not in event_body
-    assert 'eventType, "impression"' not in source
+    assert "IntersectionObserver" in source
+    assert "visibleRatio: 0.5" in source
+    assert "dwellMs: 750" in source
+    assert '"imp:" + item._requestId' in source
+    assert "maxRetries: 3" in source
+    assert "navigator.sendBeacon" in source
+    assert 'event_type: "impression"' in source
+    assert 'event_type: "dwell"' in source
+    assert "dwell_ms: Math.round(total)" in source
+    assert "endAllDwells" in source
+    assert "navigator.share" in source
+    assert "navigator.clipboard.writeText" in source
+    assert 'sendBehavior(item, "share", button)' in source
+    assert "stopImpressionObservation" in source
+    assert 'document.visibilityState !== "visible"' in source
+    assert "const retryable = [...impressionState.pending.values()]" in source
+    assert '`${name}:${userId}`' in source
+    assert "restoreImpressionState(user.id)" in source
+    assert "resetFeedSession({ clearPersisted: Boolean(state.user?.id) })" in source
+    assert "if (!state.user || impressionState.flushInFlight" in source
 
 
 def test_admin_ui_is_role_gated_and_server_errors_are_visible() -> None:
@@ -100,7 +121,7 @@ def test_admin_ui_is_role_gated_and_server_errors_are_visible() -> None:
 def test_ui_has_loading_empty_error_cover_and_responsive_states() -> None:
     app = _read("app.js")
     css = _read("styles.css")
-    assert "正在生成推荐并记录曝光" in app
+    assert "正在生成推荐并记录服务曝光" in app
     assert "当前没有可展示内容" in app
     assert 'type: "error"' in app
     assert "cover-fallback" in app
@@ -111,12 +132,29 @@ def test_ui_has_loading_empty_error_cover_and_responsive_states() -> None:
 
 def test_dashboard_and_feed_are_populated_from_api_responses() -> None:
     app = _read("app.js")
+    api_source = _read("api.js")
+    html = _read("index.html")
     assert "renderDashboard(overviewResult.value)" in app
     assert "response.items || []" in app
     assert "overview.feed_breakdown || []" in app
+    assert "overview.candidate_sources || []" in app
     assert "overview.top_items || []" in app
     assert "request_id: item._requestId" in app
     assert "position: Number(item.position)" in app
+    assert "`/admin/models/compare?" in api_source
+    assert "model-compare-selector" in app
+    assert 'id="model-comparison"' in html
+    assert 'id="batch-status-dialog"' in html
+    assert "updateItemStatusBatch" in api_source
+    assert "selectedOperationItems" in app
+    assert 'id="dashboard-range-form"' in html
+    assert 'id="dashboard-export"' in html
+    assert 'id="source-breakdown-body"' in html
+    assert "api.dashboard(state.dashboardRange)" in app
+    assert "api.timeseries(metric, state.dashboardRange)" in app
+    assert "api.exportDashboard(state.dashboardRange)" in app
+    assert '"/admin/dashboard/export.csv' in api_source
+    assert 'responseType: "blob"' in api_source
 
 
 def test_delivery_documents_are_honest_about_verification() -> None:

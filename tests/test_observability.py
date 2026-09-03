@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import io
 import json
 import logging
@@ -60,6 +61,163 @@ def test_dashboard_timeseries_requires_admin_and_validates_query(api_env) -> Non
         )
         assert excessive_range.status_code == 422
         assert excessive_range.json()["error"]["code"] == "invalid_time_range"
+
+
+def test_dashboard_csv_requires_admin_and_validates_time_range(api_env) -> None:
+    app, _, _ = api_env
+    with TestClient(app) as anonymous, TestClient(app) as user, TestClient(app) as admin:
+        assert anonymous.get("/api/v1/admin/dashboard/export.csv").status_code == 401
+        _login(user, "alice")
+        assert user.get("/api/v1/admin/dashboard/export.csv").status_code == 403
+        _login(admin, "admin", "admin-pass")
+
+        invalid = admin.get(
+            "/api/v1/admin/dashboard/export.csv",
+            params={"from": "not-a-timestamp"},
+        )
+        assert invalid.status_code == 422
+        assert invalid.json()["error"]["code"] == "invalid_time_range"
+
+        reversed_range = admin.get(
+            "/api/v1/admin/dashboard/export.csv",
+            params={
+                "from": "2026-01-02T00:00:00Z",
+                "to": "2026-01-01T00:00:00Z",
+            },
+        )
+        assert reversed_range.status_code == 422
+        assert reversed_range.json()["error"]["code"] == "invalid_time_range"
+
+
+def test_dashboard_csv_matches_overview_range_and_escapes_titles(api_env) -> None:
+    app, database, _ = api_env
+    with TestClient(app) as user, TestClient(app) as admin:
+        _login(user, "alice")
+        _login(admin, "admin", "admin-pass")
+        included = user.get("/api/v1/feeds/popular?limit=1").json()
+        excluded = user.get("/api/v1/feeds/explore?limit=1").json()
+        item = included["items"][0]
+        special_title = '中文, "引号"\n换行'
+        events = [
+            _client_event(included, "impression", "csv-impression"),
+            _client_event(included, "click", "csv-click"),
+            _client_event(included, "like", "csv-like"),
+        ]
+        assert user.post("/api/v1/events/batch", json={"events": events}).status_code == 200
+
+        with database.transaction(immediate=True) as conn:
+            conn.execute(
+                "UPDATE items SET title = ? WHERE item_id = ?",
+                (special_title, item["item_id"]),
+            )
+            for request_id, timestamp in (
+                (included["request_id"], "2026-02-01T00:00:00.000000Z"),
+                (excluded["request_id"], "2026-02-01T01:00:00.000000Z"),
+            ):
+                conn.execute(
+                    "UPDATE recommendation_requests SET created_at = ? WHERE request_id = ?",
+                    (timestamp, request_id),
+                )
+                conn.execute(
+                    "UPDATE exposures SET created_at = ? WHERE request_id = ?",
+                    (timestamp, request_id),
+                )
+                conn.execute(
+                    "UPDATE events SET received_at = ? WHERE request_id = ?",
+                    (timestamp, request_id),
+                )
+
+        params = {
+            "from": "2026-02-01T00:00:00Z",
+            "to": "2026-02-01T01:00:00Z",
+        }
+        overview_response = admin.get("/api/v1/admin/dashboard/overview", params=params)
+        export_response = admin.get("/api/v1/admin/dashboard/export.csv", params=params)
+        assert overview_response.status_code == 200
+        assert export_response.status_code == 200
+        assert export_response.headers["content-type"] == "text/csv; charset=utf-8"
+        assert export_response.headers["content-disposition"] == (
+            'attachment; filename="dashboard_20260201T000000Z_20260201T010000Z.csv"'
+        )
+        assert export_response.content.startswith(b"\xef\xbb\xbf")
+
+        rows = list(
+            csv.DictReader(io.StringIO(export_response.content.decode("utf-8-sig")))
+        )
+        overview = overview_response.json()
+        summary = next(row for row in rows if row["record_type"] == "overview")
+        for field in (
+            "users",
+            "active_users",
+            "requests",
+            "served_exposures",
+            "viewable_impressions",
+            "clicks",
+            "likes",
+            "offline_items",
+            "active_boosts",
+        ):
+            assert int(summary[field]) == overview[field]
+        assert float(summary["served_ctr"]) == pytest.approx(overview["served_ctr"])
+        assert float(summary["viewable_ctr"]) == pytest.approx(overview["viewable_ctr"])
+        assert summary["range_from"] == overview["range"]["from"]
+        assert summary["range_to"] == overview["range"]["to"]
+        assert overview["requests"] == 1
+
+        feed_rows = {row["scope"]: row for row in rows if row["record_type"] == "feed"}
+        for feed in overview["feed_breakdown"]:
+            row = feed_rows[feed["feed_type"]]
+            assert int(row["requests"]) == feed["requests"]
+            assert int(row["served_exposures"]) == feed["served_exposures"]
+            assert float(row["served_ctr"]) == pytest.approx(feed["served_ctr"])
+
+        source_rows = {
+            row["scope"]: row for row in rows if row["record_type"] == "candidate_source"
+        }
+        assert sum(source["served_exposures"] for source in overview["candidate_sources"]) == (
+            overview["served_exposures"]
+        )
+        for source in overview["candidate_sources"]:
+            row = source_rows[source["source"]]
+            assert int(row["requests"]) == source["requests"]
+            assert int(row["served_exposures"]) == source["served_exposures"]
+            assert float(row["served_exposure_share"]) == pytest.approx(source["share"])
+        with database.connect() as conn:
+            persisted_sources = {
+                row["source"]: int(row["count"])
+                for row in conn.execute(
+                    """
+                    SELECT source, COUNT(*) AS count
+                    FROM exposures
+                    WHERE created_at >= ? AND created_at < ?
+                    GROUP BY source
+                    """,
+                    (overview["range"]["from"], overview["range"]["to"]),
+                )
+            }
+        assert persisted_sources == {
+            source["source"]: source["served_exposures"]
+            for source in overview["candidate_sources"]
+        }
+
+        top_item = next(
+            row
+            for row in rows
+            if row["record_type"] == "top_item" and row["item_id"] == item["item_id"]
+        )
+        assert top_item["title"] == special_title
+
+        empty = admin.get(
+            "/api/v1/admin/dashboard/export.csv",
+            params={
+                "from": "2030-01-01T00:00:00Z",
+                "to": "2030-01-01T01:00:00Z",
+            },
+        )
+        assert empty.status_code == 200
+        empty_rows = list(csv.DictReader(io.StringIO(empty.content.decode("utf-8-sig"))))
+        assert empty_rows[0]["record_type"] == "overview"
+        assert int(empty_rows[0]["requests"]) == 0
 
 
 def test_dashboard_timeseries_aggregates_all_metrics_from_database(api_env) -> None:

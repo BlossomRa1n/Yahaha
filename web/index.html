@@ -42,6 +42,10 @@
           <div class="auth-panel">
             <p class="eyebrow">多用户推荐系统</p>
             <h1 id="login-title">登录工作台</h1>
+            <div id="auth-mode" class="segmented-control auth-mode" role="tablist" aria-label="账号操作">
+              <button id="login-mode" type="button" role="tab" aria-selected="true">登录</button>
+              <button id="register-mode" type="button" role="tab" aria-selected="false">注册</button>
+            </div>
             <form id="login-form" class="form-stack" novalidate>
               <label>
                 <span>用户名</span>
@@ -49,7 +53,7 @@
               </label>
               <label>
                 <span>密码</span>
-                <input id="password" name="password" type="password" autocomplete="current-password" required>
+                <input id="password" name="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" required>
               </label>
               <p id="login-error" class="form-error" role="alert" hidden></p>
               <button id="login-button" class="primary-button" type="submit">登录</button>
@@ -101,6 +105,16 @@
             <button id="dashboard-refresh" class="icon-button" type="button" title="刷新 Dashboard" aria-label="刷新 Dashboard">&#x21bb;</button>
           </div>
 
+          <form id="dashboard-range-form" class="dashboard-range-form">
+            <label><span>开始时间</span><input id="dashboard-range-from" name="from" type="datetime-local" step="1" required></label>
+            <label><span>结束时间</span><input id="dashboard-range-to" name="to" type="datetime-local" step="1" required></label>
+            <button id="dashboard-range-apply" class="secondary-button" type="submit">应用</button>
+            <button id="dashboard-export" class="icon-text-button" type="button">
+              <span aria-hidden="true">&#x2b07;</span><span>导出 CSV</span>
+            </button>
+          </form>
+          <div id="dashboard-range-applied" class="muted" aria-live="polite"></div>
+
           <div id="dashboard-state" class="state-panel" role="status">等待加载指标</div>
           <section aria-labelledby="overview-title">
             <div class="section-heading">
@@ -115,9 +129,13 @@
               <h2 id="timeseries-title">时间趋势</h2>
               <select id="timeseries-metric" aria-label="选择趋势指标">
                 <option value="requests">请求</option>
-                <option value="exposures">曝光</option>
+                <option value="served_exposures">服务曝光</option>
+                <option value="viewable_impressions">可见曝光</option>
                 <option value="clicks">点击</option>
                 <option value="likes">喜欢</option>
+                <option value="shares">分享</option>
+                <option value="revisits">重复访问</option>
+                <option value="dwell_events">停留事件</option>
               </select>
             </div>
             <div id="timeseries-chart" class="timeseries-chart" role="img" aria-label="指标时间趋势折线图"></div>
@@ -128,7 +146,7 @@
               <h2 id="feed-breakdown-title">信息流分布</h2>
               <div class="table-scroll">
                 <table>
-                  <thead><tr><th>信息流</th><th>请求</th><th>曝光</th><th>点击</th><th>喜欢</th><th>不感兴趣</th><th>CTR</th><th>占比</th></tr></thead>
+                  <thead><tr><th>信息流</th><th>请求</th><th>服务曝光</th><th>可见曝光</th><th>点击</th><th>喜欢</th><th>不感兴趣</th><th>分享</th><th>重复访问</th><th>平均停留</th><th>服务 CTR</th><th>可见 CTR</th><th>服务曝光占比</th></tr></thead>
                   <tbody id="feed-breakdown-body"></tbody>
                 </table>
               </div>
@@ -137,12 +155,22 @@
               <h2 id="top-items-title">热门内容</h2>
               <div class="table-scroll">
                 <table>
-                  <thead><tr><th>内容</th><th>曝光</th><th>点击</th><th>喜欢</th><th>CTR</th></tr></thead>
+                  <thead><tr><th>内容</th><th>服务曝光</th><th>可见曝光</th><th>点击</th><th>喜欢</th><th>服务 CTR</th><th>可见 CTR</th></tr></thead>
                   <tbody id="top-items-body"></tbody>
                 </table>
               </div>
             </section>
           </div>
+
+          <section aria-labelledby="source-breakdown-title">
+            <h2 id="source-breakdown-title">候选来源诊断</h2>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>来源</th><th>涉及请求</th><th>服务曝光</th><th>占比</th></tr></thead>
+                <tbody id="source-breakdown-body"></tbody>
+              </table>
+            </div>
+          </section>
 
           <section aria-labelledby="diagnostics-title">
             <h2 id="diagnostics-title">链路诊断</h2>
@@ -162,10 +190,20 @@
           </section>
 
           <section aria-labelledby="models-title">
-            <h2 id="models-title">模型运行</h2>
+            <div class="section-heading">
+              <div><h2 id="models-title">模型运行与版本对比</h2><span class="muted">选择 2–10 个评估口径一致的真实版本</span></div>
+              <button id="compare-models-button" class="secondary-button" type="button" disabled>比较所选版本</button>
+            </div>
+            <div id="model-comparison-state" class="state-panel" role="status" hidden></div>
+            <div id="model-comparison" class="table-scroll" hidden>
+              <table>
+                <thead><tr><th>版本</th><th>数据 / 时间窗</th><th>样本 / 事件</th><th>状态</th><th>Recall</th><th>NDCG</th><th>HitRate</th></tr></thead>
+                <tbody id="model-comparison-body"></tbody>
+              </table>
+            </div>
             <div class="table-scroll">
               <table>
-                <thead><tr><th>模型版本</th><th>数据版本</th><th>算法</th><th>状态</th><th>训练时间</th><th>Test SVD 指标</th></tr></thead>
+                <thead><tr><th>选择</th><th>模型版本</th><th>数据版本</th><th>算法</th><th>状态</th><th>训练时间</th><th>Test SVD 指标</th></tr></thead>
                 <tbody id="models-body"></tbody>
               </table>
             </div>
@@ -191,9 +229,13 @@
           </form>
 
           <div id="operations-state" class="state-panel" role="status">等待加载内容</div>
+          <div class="batch-toolbar">
+            <label><input id="select-page-items" type="checkbox">选择本页</label>
+            <button id="batch-action-button" class="secondary-button" type="button" disabled>批量操作</button>
+          </div>
           <div class="table-scroll">
             <table>
-              <thead><tr><th>内容 ID</th><th>标题</th><th>热度</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+              <thead><tr><th>选择</th><th>内容 ID</th><th>标题</th><th>热度</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
               <tbody id="items-body"></tbody>
             </table>
           </div>
@@ -210,7 +252,7 @@
             </div>
             <div class="table-scroll">
               <table>
-                <thead><tr><th>时间</th><th>管理员</th><th>操作</th><th>对象</th><th>状态变化</th><th>原因</th></tr></thead>
+                <thead><tr><th>时间</th><th>管理员</th><th>操作</th><th>对象</th><th>批次</th><th>状态变化</th><th>原因</th></tr></thead>
                 <tbody id="operations-body"></tbody>
               </table>
             </div>
@@ -236,6 +278,18 @@
         <label><span>原因</span><textarea name="reason" rows="3" maxlength="500" required></textarea></label>
         <p class="form-error" data-form-error role="alert" hidden></p>
         <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">取消</button><button class="danger-button" type="submit">确认操作</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="batch-status-dialog" class="modal compact-modal">
+      <div class="modal-heading"><h2>批量更新内容状态</h2><button class="icon-button" data-close-dialog type="button" title="关闭" aria-label="关闭">&#xd7;</button></div>
+      <form id="batch-status-form" class="form-stack">
+        <p id="batch-selection-count"></p>
+        <label><span>操作</span><select name="status"><option value="offline">批量下线</option><option value="online">批量恢复</option></select></label>
+        <label><span>统一原因</span><textarea name="reason" rows="3" minlength="1" maxlength="500" required></textarea></label>
+        <label class="confirmation-check"><input name="confirmed" type="checkbox" required><span>我已确认所选内容和操作类型</span></label>
+        <p class="form-error" data-form-error role="alert" hidden></p>
+        <div class="dialog-actions"><button class="secondary-button" data-close-dialog type="button">取消</button><button class="danger-button" type="submit">确认批量操作</button></div>
       </form>
     </dialog>
 
