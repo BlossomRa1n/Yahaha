@@ -4,6 +4,15 @@ This log records delegated work as evidence, not as proof of completion. The lea
 agent marks implementation complete only after inspecting diffs and rerunning
 tests.
 
+## AI Tool Used
+
+This project used **OpenAI Codex** for repository inspection, implementation,
+code review assistance, test execution, debugging and delivery-document updates.
+The prompt summaries below record the key instructions given to Codex and its
+specialist agents. The candidate retained responsibility for architectural choices,
+reviewed the resulting diffs, rejected unsupported claims and accepted changes only
+after relevant tests or runtime checks passed.
+
 ## Audit Round
 
 ### Data and algorithm agent
@@ -231,7 +240,9 @@ After all four module commits existed, the lead cloned the history into an ignor
 temporary directory, supplied the same official raw files as external input, and
 reran dependency sync, smoke processing/training, DB seed, tests, JavaScript checks
 and health. This converted clean-checkout reproduction from pending to passed;
-the formal demonstration recording remains unperformed.
+at that checkpoint the formal demonstration recording had not yet been performed.
+It was subsequently recorded and its external link was added to `README.md`,
+`docs/DEMO.md`, `docs/DELIVERY_CHECKLIST.md` and `docs/VERIFICATION.md`.
 
 ## 2026-09-02 Mandatory Closure Round
 
