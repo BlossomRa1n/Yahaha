@@ -26,9 +26,10 @@ session。数据库是请求、曝光、行为、画像、运营状态和 Dashbo
 ## 前置条件
 
 - Python 3.11 或更高版本。
-- 推荐安装 [uv](https://docs.astral.sh/uv/)；不要求 Docker、GPU、Redis 或 Node。
-- CPU smoke 模式建议至少 4 GB 可用内存。当前机器 full `pipeline all` 实测
-  `19.323s`，其中 prepare `1.755s`；峰值内存未测，不应把该耗时外推到其他机器。
+- 推荐安装 [uv](https://docs.astral.sh/uv/)；不要求 Docker、Redis 或 Node。GPU 可选：
+  `train-deep` 默认 `--device auto`，检测到 CUDA 时使用 GPU，否则回退 CPU。
+- CPU smoke 模式建议至少 4 GB 可用内存。全量流程峰值内存尚未测量，不能据此宣称
+  full 模式的最低内存；资源不足时先运行 smoke。
 - MicroLens 官方数据由使用者自行下载，遵守原项目的数据许可与使用条件。
 
 安装依赖：
@@ -56,6 +57,41 @@ data/raw/MicroLens-50k_likes_and_views.txt
 重新打包或公开分发官方原始数据及其子集。多模态实验在本地使用官方
 `MicroLens-50k_covers.zip` 提取离线特征；原始封面、预训练权重和 embedding 不进入
 Git。Web 仍使用服务端生成的确定性占位封面，不直接分发官方图片。
+
+### 从零运行完整数据与统一模型
+
+以下命令在仓库根目录按顺序执行。前三个 CSV/TXT 和封面压缩包必须已放入
+`data/raw/`。首次运行需要联网安装锁定依赖并下载 torchvision 官方 MobileNetV3-Small
+权重；已有缓存时不会重复下载。
+
+```powershell
+Copy-Item .env.example .env
+uv sync --group dev
+uv run python -c "from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small; mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.DEFAULT)"
+uv run python -m recsys.pipeline all --raw-dir data/raw --out-dir data/processed --artifacts-dir artifacts --mode full --max-eval-users 5000 --rank 32 --seed 20260901
+uv run python -m recsys.pipeline train-multimodal --processed-dir data/processed --artifacts-dir artifacts --base-pointer artifacts/current.json --archive data/raw/MicroLens-50k_covers.zip --covers-dir data/raw/MicroLens-50k_covers --batch-size 64 --pca-dim 128 --max-eval-users 5000 --locked-visual-weight 0.20
+uv run python -m recsys.pipeline train-deep --processed-dir data/processed --artifacts-dir artifacts --base-pointer artifacts/current.json --multimodal-pointer artifacts/multimodal-current.json --mode full --validation-mode sampled --max-eval-users 5000 --epochs 8 --patience 2 --device auto
+uv run python -m app.cli init-db --items data/processed/items.csv --reset
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+最后一条命令会持续运行服务；浏览器打开 `http://127.0.0.1:8000/`。`init-db --reset`
+会清空并重建本地演示数据库，只应在首次初始化或明确重建演示环境时执行。
+
+当前机器的实测与资源边界如下，均不包含下载时间：
+
+| 阶段/资源 | 当前实测或已知边界 |
+|---|---|
+| 基础数据处理 + SVD full | `19.323s`，其中 prepare `1.755s` |
+| 统一深度 full + 四组 validation | RTX 5070 Laptop 8 GB CUDA，约 `6.2` 分钟 |
+| checkpoint 恢复后的 validation + test | 同一机器约 `5.2` 分钟；这是单独重跑，不应与上一项简单相加 |
+| 多模态特征提取 | 当前实现使用 CPU；未单独记录完整耗时，不给出虚假估计 |
+| 内存 | smoke 建议至少 4 GB 可用内存；full 峰值未测 |
+| 当前磁盘实占 | `data/raw` 约 1.26 GiB、`data/processed` 约 0.02 GiB、`artifacts` 约 3.20 GiB、`.venv` 约 4.40 GiB，合计约 8.9 GiB；训练临时峰值未测，应额外预留空间 |
+
+纯 CPU 可以完成统一深度训练与推理，但尚无 full 深度训练的 CPU 实测耗时。上述 CUDA
+时间只代表当前机器，不能外推到其他硬件。若只需快速检查安装和数据链路，使用下方
+smoke 命令，不必重训完整统一模型。
 
 一条命令完成处理、smoke 训练、评估和原子发布：
 
@@ -126,21 +162,21 @@ uv run python -m recsys.pipeline train --processed-dir data/processed --artifact
 锁定混排策略为 `0.367097`。标题内容产物覆盖 25,903 个 cold positive 中的
 25,869 个，cold-item coverage 为 `0.998687`。训练使用线上同一个
 `mix_candidates` 纯函数：只在 validation 比较 `dynamic_confidence_v2` 与
-`safe_svd_content_v2`，test 只运行锁定策略。动态策略的 validation sampled-all-items
-Recall/NDCG 为 `0.283030/0.147777`，低于安全策略的 `0.382142/0.181380`，因此未通过
-1% 质量门槛，当前发布安全策略；不以来源数量掩盖相关性退化。
+`safe_svd_content_v2`，test 只运行选定策略。动态策略的 validation sampled-all-items
+Recall/NDCG 为 `0.283030/0.147777`，低于安全策略的 `0.382142/0.181380`，因此该次
+基础模型比较选择安全策略；这些指标仅用于透明记录方案取舍。
 
 ## DSSM、DeepFM 与多模态（统一生产链路）
 
 统一 7 源 + DeepFM 是个性化 feed 的唯一生产路径：SVD、DSSM、标题内容、视觉、
 item-item CF、热门、探索七路召回，过滤去重后由单一 DeepFM 重排。`artifacts/current.json`
 仍是稳定 SVD 指针，但只作为召回源之一；深度和视觉模型使用独立的
-`experiment-current.json`、`multimodal-current.json`，加载、Hash 校验或推理失败时
-回退热门/探索，不会覆盖稳定指针。
+`experiment-current.json`、`multimodal-current.json`。统一深度/视觉产物不可用时，
+已映射的 warm 用户回退到个性化 SVD；cold 用户或基础模型也不可用时回退热门/探索。
 
 ```powershell
-uv run python -m recsys.pipeline train-deep --mode full --validation-mode sampled --max-eval-users 5000 --epochs 8 --patience 2
 uv run python -m recsys.pipeline train-multimodal --batch-size 64 --pca-dim 128 --max-eval-users 5000 --locked-visual-weight 0.20
+uv run python -m recsys.pipeline train-deep --mode full --validation-mode sampled --max-eval-users 5000 --epochs 8 --patience 2
 ```
 
 当前统一两阶段实验 `deep-20260903T045748115694Z-a8df9062` 真实训练 DSSM 和
@@ -154,10 +190,11 @@ dropout 模拟 cold-start，不使用 validation 标签。DeepFM validation AUC 
 
 该实验在 validation 上 sampled-all-items NDCG `0.205171` 高于稳定策略 `0.181380`，Warm
 Recall/NDCG `0.362642/0.227026` 不低于稳定策略 `0.359512/0.218799`；但 sampled-all-items
-Recall `0.319631` 低于 `0.382142`、HitRate `0.413400` 低于 `0.486200`，sampled Recall
-门槛未通过。该纯 DeepFM 权衡（提升 NDCG、退化 Recall/HitRate）已被接受，统一链路成为
+Recall `0.319631` 低于 `0.382142`、HitRate `0.413400` 低于 `0.486200`。该纯 DeepFM
+权衡（提升 NDCG、退化 Recall/HitRate）已被接受，统一链路成为
 唯一生产路径。锁定策略只运行一次 test：sampled-all-items Recall/NDCG/HitRate 为
-`0.257060/0.159583/0.342000`。实验加载、多模态版本或推理失败均回退热门/探索。
+`0.257060/0.159583/0.342000`。统一模型不可用时，warm 用户回退个性化 SVD，
+cold 用户或基础模型不可用时回退热门/探索。
 
 锁定多模态实验 `multimodal-20260902T180847621178Z-7e09b190` 使用真实
 MobileNetV3-Small ImageNet 权重，19,220 张封面映射/解析成功率和 item/cold-item
@@ -272,7 +309,7 @@ uv run python -m app.cli retrain-events `
 个性化 Feed 统一接收 `model`、`content_profile`、`item_cf`、`popular`、`explore`
 五类候选。共享混排先剔除无资格、非有限及零支持 CF 候选，再做来源内 rank
 归一化；动态策略按 warm/cold、历史密度、CF 支持度和内容置信度选择配额，来源不足时
-确定性放宽。若 validation 未通过质量门槛，产物锁定 SVD + cold-content 安全策略。
+确定性放宽。validation 用于比较并记录候选策略，产物保存本次选定的混排策略。
 全局去重后再执行标题词元 MMR。TF-IDF 词表仅由训练期可见标题
 拟合，固定词表可转换预测时已存在的新内容；用户内容向量和 CF 共现均不读取 cutoff
 之后的行为。各产物带 Hash、数据版本和 cutoff，单一产物损坏只禁用对应来源。
@@ -348,8 +385,8 @@ JavaScript 语法、19,220 内容数据库初始化、真实纵向 API 链路，
 数据库初始化、全套测试、JavaScript 检查和健康检查。
 
 已知边界：统一 7 源 + DeepFM 已是个性化 feed 唯一生产路径（纯 DeepFM，提升 NDCG 但
-退化 sampled-all-items Recall/HitRate，该权衡已接受）；稳定 SVD 指针仅作召回源，多模态
-产物已通过自身离线门槛。viewable impression 由浏览器按
+退化 sampled-all-items Recall/HitRate，该权衡已接受）；稳定 SVD 指针用于召回和 warm
+用户故障回退，多模态产物保留独立离线评估结果。viewable impression 由浏览器按
 50% 可见且持续 750ms 上报，`sendBeacon`
 只能确认浏览器接收发送任务，不能提供服务端确认；封面为本地占位；SQLite 同步更新
 画像。dwell 上限为 10 分钟，重复提交在同一 request/item/position 上取最大值；

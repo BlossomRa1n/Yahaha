@@ -16,6 +16,7 @@ from app.artifacts import ArtifactStore
 from app.cli import load_items, seed_accounts
 from app.config import Settings
 from app.db import Database
+from app.deep_artifacts import DeepArtifactStore
 from app.main import create_app
 from recsys.mixing import DYNAMIC_POLICY_VERSION, SAFE_POLICY_VERSION
 
@@ -59,6 +60,15 @@ def verify(items_path: Path, model_pointer: Path) -> dict[str, Any]:
     artifact = artifact_store.get()
     assert artifact is not None, artifact_store.last_error or "model artifact is unavailable"
     assert len(artifact.user_ids) >= 2, "model must contain at least two mapped users"
+    deep_pointer = model_pointer.parent / "experiment-current.json"
+    multimodal_pointer = model_pointer.parent / "multimodal-current.json"
+    deep = DeepArtifactStore(deep_pointer).get() if deep_pointer.is_file() else None
+    eligible_users = (
+        [str(value) for value in artifact.user_ids if str(value) in deep.user_index]
+        if deep is not None
+        else []
+    )
+    seed_user_ids = (eligible_users or [str(value) for value in artifact.user_ids])[:2]
 
     with tempfile.TemporaryDirectory(prefix="microlens-official-e2e-") as temp_name:
         settings = Settings(
@@ -68,12 +78,16 @@ def verify(items_path: Path, model_pointer: Path) -> dict[str, Any]:
             model_pointer=model_pointer,
             session_hours=12,
             session_cookie="official_e2e_session",
+            experiment_model_pointer=(deep_pointer if deep_pointer.is_file() else None),
+            multimodal_model_pointer=(
+                multimodal_pointer if multimodal_pointer.is_file() else None
+            ),
         )
         database = Database(settings.database_path)
         database.reset()
         with database.transaction(immediate=True) as conn:
             item_count = load_items(conn, items_path)
-            seed_accounts(conn, [str(value) for value in artifact.user_ids[:2]])
+            seed_accounts(conn, seed_user_ids)
 
         app = create_app(settings)
         with ExitStack() as stack:
@@ -97,7 +111,13 @@ def verify(items_path: Path, model_pointer: Path) -> dict[str, Any]:
                 item["item_id"] for item in bob_feed["items"]
             ]
             assert carol_feed["fallback_reason"] == "cold_start"
-            assert alice_feed["model_version"] == artifact.model_version
+            expected_model_versions = {artifact.model_version}
+            if deep is not None:
+                expected_model_versions.add(deep.model_version)
+            assert any(
+                version in str(alice_feed["model_version"])
+                for version in expected_model_versions
+            )
             assert all(
                 {
                     "position",
@@ -153,22 +173,30 @@ def verify(items_path: Path, model_pointer: Path) -> dict[str, Any]:
                 item["source"] for item in alice_feed["items"] + page_two["items"]
             )
             source_mix = alice_feed["diversity"]["source_mix"]
-            mix_policy_version = source_mix["mix_policy_version"]
-            assert mix_policy_version in {
-                SAFE_POLICY_VERSION,
-                DYNAMIC_POLICY_VERSION,
-            }
-            assert initial_source_counts["content_profile"] > 0
+            strategy = source_mix["strategy"]
+            mix_policy_version = source_mix.get("mix_policy_version", strategy)
             assert len(
                 {
                     item["item_id"]
                     for item in alice_feed["items"] + page_two["items"]
                 }
             ) == len(alice_feed["items"] + page_two["items"])
-            if mix_policy_version == SAFE_POLICY_VERSION:
+            if strategy == "unified_two_stage_v2":
+                assert source_mix["mix_policy_version"] == "unified_two_stage_v2"
+                assert len(initial_source_counts) >= 2
+            elif strategy == "svd_fallback":
+                assert set(initial_source_counts) == {"svd"}
+            else:
+                mix_policy_version = source_mix["mix_policy_version"]
+                assert mix_policy_version in {
+                    SAFE_POLICY_VERSION,
+                    DYNAMIC_POLICY_VERSION,
+                }
+                assert initial_source_counts["content_profile"] > 0
+            if strategy not in {"unified_two_stage_v2", "svd_fallback"} and mix_policy_version == SAFE_POLICY_VERSION:
                 assert set(initial_source_counts) <= {"model", "content_profile"}
                 assert initial_source_counts["model"] > 0
-            else:
+            elif strategy not in {"unified_two_stage_v2", "svd_fallback"}:
                 assert len(initial_source_counts) >= 2
 
             profile_before = _expect(alice.get("/api/v1/me/profile"))
@@ -208,8 +236,10 @@ def verify(items_path: Path, model_pointer: Path) -> dict[str, Any]:
             dashboard_source_counts = {
                 row["source"]: row["served_exposures"] for row in after["candidate_sources"]
             }
-            assert dashboard_source_counts["content_profile"] > 0
-            assert dashboard_source_counts["model"] > 0
+            assert all(
+                dashboard_source_counts.get(source, 0) >= count
+                for source, count in initial_source_counts.items()
+            )
             assert sum(dashboard_source_counts.values()) == after["served_exposures"]
             request_detail = _expect(
                 admin.get(f"/api/v1/admin/requests/{alice_feed['request_id']}")

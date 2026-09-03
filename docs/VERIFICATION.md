@@ -21,7 +21,8 @@
   不表示 DSSM/DeepFM 仍处于独立实验链路。
 - `artifacts/multimodal-current.json` 指向
   `multimodal-20260902T180847621178Z-7e09b190`，作为同一统一模型的视觉召回组件。
-  任一深度或视觉产物缺失、损坏或版本不兼容时，线上明确回退到热门/探索。
+  深度或视觉产物缺失、损坏或版本不兼容时，已映射 warm 用户回退到个性化 SVD；
+  cold 用户或基础模型也不可用时回退热门/探索。
 
 ## Environment
 
@@ -75,6 +76,7 @@
 | V-34 | Scheme B regression and hygiene | `uv run pytest -q`; `compileall`; `node --check`; `uv run python scripts/ci_smoke.py`; `git ls-files` | `71 passed`; compile/JS exit 0; CI smoke passed; final real-user union 657 and Top-10 included DSSM/visual/content/item-CF primary sources; incompatible multimodal version fell back to stable SVD; no tracked model/data/cover/DB files | Main-thread run, 2026-09-03 | PASSED locally |
 | V-35 | Unified sampled-negative protocol | Full pytest, compileall, `scripts.ci_smoke`, diff check, then GPU `train-deep` smoke with validation and locked test | 80 tests passed; SVD/deep/visual use `deterministic_sampled_negatives_v1`; sampled metrics retain all positives and use 100 deterministic negatives; CUDA smoke used RTX 5070 and finished in 35.1 s; artifact `deep-20260903T134019966433Z-440b2b95`; the mismatched 500-user cohort was correctly identified in metadata | Main-thread run, 2026-09-03 | PASSED locally |
 | V-36 | Current unified production pointer | Inspect `app/config.py`, `app/main.py`, `app/recommendation.py` and the three artifact pointers | Default personalized requests load `deep-20260903T152647940394Z-cb975d73` and execute seven-source recall plus DeepFM; SVD is the base recall/fallback artifact and the pinned multimodal version supplies visual candidates | Main-thread code, pointer and manifest inspection, 2026-09-04 | PASSED; ACTIVE PRODUCTION PATH |
+| V-37 | Multi-user personalization rejection-risk regression | `uv run python -m scripts.verify_official_e2e --items data/processed/items.csv --model-pointer artifacts/current.json`; `uv run python -m pytest -q -p no:cacheprovider --basetemp=.tmp/pytest-34-fix-final` | Official E2E exited 0 with `alice_bob_different=true`; unified source counts included visual/content/DSSM/item-CF; cold start, replay, events, Dashboard, boost/offline/restore, RBAC and logout passed. Full suite: 102 tests passed; only the known third-party Starlette/httpx warning | Main-thread rerun, 2026-09-04 | PASSED |
 
 ## Offline Metrics
 
@@ -97,7 +99,7 @@ generated `metrics.json`.
 | Flow | Evidence to record | Result | Status |
 |---|---|---|---|
 | Login/session/isolation | 3 normal users, admin, refresh, expiry, logout, 401/403 | Automated auth/logout/expiry/old-cookie/403/isolation tests passed; browser login covered alice and admin, not all 3 normal users | PASSED (automated), PARTIAL (browser) |
-| Three feeds | request_id, provenance, pagination, A/B difference, cold start | Automated Feed contract passed; backend agent reported real alice/bob differences; main thread verified offline removal from all three feeds. Full browser A/B, pagination and carol cold-start sequence remains | PARTIAL |
+| Three feeds | request_id, provenance, pagination, A/B difference, cold start | Official-data E2E verified Alice/Bob receive different personalized lists, Carol cold start, stable pagination replay, provenance, and offline removal from all three feeds. Full browser A/B, pagination and Carol sequence remains | PASSED (automated), PARTIAL (browser) |
 | Event/profile | DB event linkage and before/after profile/rank | Main API smoke produced +1 request/+5 exposures/+1 click/+1 like; browser showed alice behavior and updated profile | PASSED |
 | Dashboard | Numeric baseline and post-action delta | Main thread observed real post-action deltas and admin Dashboard; top items came from DB aggregation | PASSED |
 | Boost/offline/restore | Target feed, all-path filter, audit before/after | Item 2363 appeared as forced position 0; offline won over boost, direct API returned 404, three feeds omitted it; restore and audit passed | PASSED |

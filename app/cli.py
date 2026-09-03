@@ -13,6 +13,7 @@ from typing import Any
 from .artifacts import ArtifactStore
 from .config import Settings
 from .db import Database
+from .deep_artifacts import DeepArtifactStore
 from .security import hash_password, isoformat
 from recsys.data import canonical_optional_timestamp, stats_snapshot_version
 from recsys.model import train_model
@@ -218,7 +219,19 @@ def init_database(args: argparse.Namespace) -> int:
         database.initialize()
     artifact_store = ArtifactStore(settings.model_pointer)
     artifact = artifact_store.get()
-    dataset_user_ids = [str(value) for value in artifact.user_ids[:2]] if artifact else []
+    dataset_user_ids: list[str] = []
+    if artifact:
+        deep = (
+            DeepArtifactStore(settings.experiment_model_pointer).get()
+            if settings.experiment_model_pointer is not None
+            else None
+        )
+        eligible = (
+            [str(value) for value in artifact.user_ids if str(value) in deep.user_index]
+            if deep is not None
+            else []
+        )
+        dataset_user_ids = (eligible or [str(value) for value in artifact.user_ids])[:2]
     with database.transaction(immediate=True) as conn:
         item_count = load_items(conn, Path(args.items).resolve())
         seed_accounts(conn, dataset_user_ids)

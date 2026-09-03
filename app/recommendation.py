@@ -123,19 +123,38 @@ class RecommendationService:
                             "relaxations": [],
                             "base_model_version": artifact.model_version,
                         }
+            if not ordinary and artifact is not None and user["dataset_user_id"]:
+                ordinary = self._normalize_source(
+                    self._svd_candidates(
+                        conn,
+                        artifact=artifact,
+                        dataset_user_id=str(user["dataset_user_id"]),
+                        user_id=str(user["id"]),
+                        pool_size=pool_size,
+                    )
+                )
+                if ordinary:
+                    fallback_reason = "unified_model_unavailable_svd_fallback"
+                    mix_metrics = {
+                        "strategy": "svd_fallback",
+                        "selected": {"svd": len(ordinary)},
+                        "relaxations": [fallback_reason],
+                    }
+                    if deep_error:
+                        mix_metrics["deep_fallback_error"] = deep_error
             if not ordinary:
                 candidate_manifest = ()
                 ordinary = self._normalize_source(
                     self._popular(conn, artifact=artifact, pool_size=pool_size, now=now)
                 )
                 if deep_error:
-                    fallback_reason = "deep_experiment_failed"
+                    fallback_reason = "deep_model_failed_popular_fallback"
                 elif not user["dataset_user_id"]:
                     fallback_reason = "cold_start"
                 else:
-                    fallback_reason = "unified_model_unavailable"
+                    fallback_reason = "personalized_model_unavailable"
                 mix_metrics = {
-                    "strategy": "fallback",
+                    "strategy": "popular_fallback",
                     "selected": {"popular": len(ordinary)},
                     "relaxations": [fallback_reason],
                 }

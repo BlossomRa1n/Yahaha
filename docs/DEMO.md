@@ -1,71 +1,195 @@
-# 3–5 Minute Demonstration Script
+# 3–5 Minute Demonstration Script / 演示视频录制方法
 
-本脚本要求录制真实终端和浏览器，不剪接固定 JSON 或伪造指标。长时间全量训练可提前
-完成，但视频必须展示可复现命令、产物版本和真实评估文件。
+本视频使用真实终端、真实浏览器和真实数据库结果，依次覆盖题目 3.3 要求的五项内容。
+全量深度训练可以提前完成；视频中现场运行 CPU smoke，并展示已有完整训练产物和指标，
+不要用固定 JSON、截图或口头描述替代真实操作。
 
-## 0:00–0:40 数据、训练与启动
+## 录制前准备
 
-1. 展示 `data/raw/` 仅存在本地且被 `.gitignore` 排除，不打开或重新分发原始数据。
-2. 展示并运行 CPU smoke 命令：
+1. 将仓库设为公开，并用无痕窗口确认
+   <https://github.com/BlossomRa1n/Yahaha> 可以访问。
+2. 从 [MicroLens 官方仓库](https://github.com/westlake-repl/MicroLens) 的官方入口
+   提前下载以下文件到一个不属于 Git 仓库的目录，例如 `D:\MicroLens-official`：
 
-   ```powershell
-   uv run python -m recsys.pipeline all --raw-dir data/raw --out-dir data/processed --artifacts-dir artifacts --mode smoke --max-users 2000 --max-eval-users 500 --rank 32 --seed 20260901
+   ```text
+   MicroLens-50k_pairs.csv
+   MicroLens-50k_titles.csv
+   MicroLens-50k_likes_and_views.txt
    ```
 
-3. 展示 `summary.json` 的用户/内容/交互/时间边界，以及 `evaluation.md` 中 popular、
-   random、SVD 的 Recall@10、NDCG@10、HitRate@10。
-4. 展示 `artifacts/current.json`、`experiment-current.json` 和
-   `multimodal-current.json`：SVD 是统一召回的一路，个性化生产链路由七路召回和
-   DeepFM 排序组成；深度或视觉产物校验失败时明确回退热门/探索。随后初始化并启动服务。
+   多模态部分使用的 `MicroLens-50k_covers.zip` 也必须来自官方入口，但无需在
+   3-5 分钟视频中重新下载或解压。
+3. 提前完成完整训练，保留 `artifacts/` 中的 SVD、DSSM/DeepFM 和多模态产物。
+   视频只展示这些产物的真实指标，并现场运行快速 smoke。
+4. 准备两个终端窗口：终端 A 执行命令，终端 B 保持 Uvicorn 运行。
+5. 浏览器缩放设为 100%，关闭包含 Token、Cookie、个人信息或真实密钥的页面。
+6. 选择一个当前在线、标题容易辨认的内容 ID，用于强推和下线。
 
-## 0:40–1:35 多用户与三路 Feed
+> `init-db --reset` 会清空本地演示数据库。只在确认可以丢弃当前演示事件时执行。
 
-1. 登录 `alice`，切换个性化、热门、探索；指出 request_id、模型版本、画像版本、
-   item 来源、position、score/explanation。点击“加载更多”，确认无重复。
-2. 退出后登录 `bob`，回到个性化 Feed，指出结果与 alice 的可见差异。
-3. 登录冷启动账号 `carol`，展示可解释的热门/探索结果和 fallback 信息。
-4. 快速输入一次错误密码，证明登录错误态明确；不要在视频暴露 session cookie。
+## 0:00-0:50 下载源码和官方数据
 
-## 1:35–2:20 行为、画像与排序变化
+先在浏览器展示公开仓库首页及提交记录，然后在终端 A 展示从零获取源码的命令：
 
-1. 回到 `alice`；点击一个内容、喜欢另一个内容，并对第三个选择“不感兴趣”。
-2. 打开“我的画像”，展示事件类型、item、request_id、画像版本及正/负向内容。
-3. 重新请求个性化 Feed，展示不感兴趣内容被过滤，或相关排序/解释发生可观察变化。
-4. 说明 Feed 返回只产生服务曝光；卡片达到 50% 可见并持续 750 ms 后，浏览器才以
-   稳定 event_id 批量上报可见曝光。
+```powershell
+Set-Location D:\
+git clone https://github.com/BlossomRa1n/Yahaha.git Yahaha-demo-recording
+Set-Location D:\Yahaha-demo-recording
+git log --oneline -5
+```
 
-## 2:20–3:05 Dashboard 与链路诊断
+如果已经克隆过，不要删除原目录；换一个新的空目录名。随后在浏览器打开 MicroLens
+官方仓库和官方数据下载入口，指出数据由官方提供，不会上传到本项目仓库。
 
-1. 登录 `admin`，打开 Dashboard，展示真实用户、活跃用户、请求、服务曝光、可见
-   曝光、服务 CTR、可见 CTR、喜欢、Feed 分布、热门内容和当前模型。
-2. 对比行为前记录的数值，刷新后指出实际增量。
-3. 粘贴刚才的 request_id，展示请求用户、Feed、模型、返回列表、曝光及行为关联；再
-   查询 alice 的画像与最近请求。
-4. 可选：用普通用户直接访问管理 API，展示服务端 403，而非只展示隐藏导航。
+展示已从官方入口下载完成的三个文件，并复制到新源码目录：
 
-## 3:05–4:15 强推、下线、恢复与审计
+```powershell
+New-Item -ItemType Directory -Force data\raw
+Copy-Item D:\MicroLens-official\MicroLens-50k_pairs.csv data\raw\
+Copy-Item D:\MicroLens-official\MicroLens-50k_titles.csv data\raw\
+Copy-Item D:\MicroLens-official\MicroLens-50k_likes_and_views.txt data\raw\
+Get-ChildItem data\raw
+git status --short
+```
 
-1. 在内容运营中搜索一个在线内容，创建面向 alice 个性化 Feed、当前位置 0、未来
-   24 小时有效且原因完整的强推。
-2. 登录 alice 并刷新个性化 Feed，指出 `is_forced`、来源和位置。
-3. 管理员下线同一内容。再次验证 alice 的三路 Feed，并请求
-   `/api/v1/items/{item_id}`，均不能绕过下线。
-4. 恢复内容；因为强推仍有效，它应重新出现。展示审计中的管理员、时间、目标、原因
-   和前后状态。强调规则优先级 `offline > boost`。
+口播：
 
-## 4:15–5:00 测试、完成度与风险
+> 源码来自公开 GitHub 仓库，数据来自 MicroLens 官方入口。原始数据放在
+> `data/raw`，该目录被 Git 忽略，不会重新分发数据集。
 
-1. 展示 `uv run pytest` 的真实退出码与测试摘要，并打开 `docs/VERIFICATION.md`。
-2. 展示 `.env.example`、测试账号和 README 干净启动步骤。
-3. 如实陈述边界：Web 只分发占位封面，官方封面仅用于本地离线特征；SQLite 使用 TTL
-   快照；HTTP 异步训练使用进程内线程而非持久任务队列；TypeScript sidecar 的
-   PostgreSQL/Elasticsearch 成功路径尚未在本机联调。
-4. 如有失败或未验证项，直接展示为 PENDING/FAILED，不口头宣称完成。
+为了把总时长控制在 5 分钟内，克隆和数据来源展示完成后，切回已经完成依赖安装和
+全量模型训练的工作目录：
 
-## 录制前核对
+```powershell
+Set-Location D:\Yahaha_codex
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+uv sync --locked --group dev
+```
 
-- 从干净数据库 seed，不携带上次演示指标；先记录 Dashboard 基线。
-- 确认 current model 指针有效，也演练一次缺模型 fallback。
-- 预先选择一个在线、可强推且标题易辨认的 item，并记录其 ID。
-- 保留每一步 request_id；浏览器缩放 100%，桌面和窄屏均无元素重叠。
-- 视频不包含官方原始数据内容、真实密钥、本机隐私路径或未脱敏 cookie。
+口播说明当前工作目录与刚克隆的仓库代码一致，预先训练产物只用于节省录制等待时间。
+
+## 0:50-1:30 数据处理、训练评估与启动
+
+在终端 A 现场运行一条 CPU smoke 命令：
+
+```powershell
+uv run python -m recsys.pipeline all --raw-dir data/raw --out-dir .tmp/demo-smoke/processed --artifacts-dir .tmp/demo-smoke/artifacts --mode smoke --max-users 2000 --max-eval-users 500 --rank 32 --seed 20260901
+```
+
+展示命令成功退出，并打开：
+
+- `.tmp/demo-smoke/processed/summary.json`：用户数、内容数、交互数、时间范围和时间切分。
+- `.tmp/demo-smoke/artifacts/` 当前 smoke 模型目录中的 `evaluation.md` 或
+  `metrics.json`：Recall@10、NDCG@10、
+  HitRate@10 和 AUC。
+- `artifacts/current.json`、`artifacts/experiment-current.json` 和
+  `artifacts/multimodal-current.json`：SVD、统一 DSSM/DeepFM 模型及视觉组件版本。
+
+> smoke 必须写入 `.tmp/demo-smoke`，不能写入正式的 `data/processed` 或
+> `artifacts`；否则会覆盖统一生产模型依赖的基础版本指针。
+
+口播：
+
+> 数据严格按时间切成训练、验证和测试集。个性化采用七路召回，DSSM 是正式召回源，
+> 候选合并去重后由 DeepFM 统一排序；训练支持 checkpoint、早停和 GPU/CPU 自动选择。
+
+初始化数据库：
+
+```powershell
+uv run python -m app.cli init-db --items data/processed/items.csv --reset
+```
+
+在终端 B 启动服务：
+
+```powershell
+Set-Location D:\Yahaha_codex
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+浏览器访问 <http://127.0.0.1:8000/>，确认页面正常加载。
+
+## 1:30-2:20 两个用户与不同信息流
+
+1. 使用 `alice / demo-pass` 登录。
+2. 打开“个性化”，展示前三项内容，并指出 `request_id`、模型版本、来源、位置、
+   分数和解释。
+3. 点击“加载更多”，说明 Cursor 分页保持顺序稳定且无重复。
+4. 切换“热门”，展示全局热度信息流。
+5. 退出 Alice，使用 `bob / demo-pass` 登录。
+6. 打开“个性化”，与刚才 Alice 的前三项进行可见对比。
+7. 切换“探索”，展示未看或低曝光内容。
+
+口播：
+
+> 登录态由服务端 HttpOnly Session 识别。Alice 和 Bob 的历史、画像、推荐结果与
+> 行为互相隔离，因此个性化结果不同；热门和探索是两条独立信息流。
+
+## 2:20-3:05 行为上报、画像和指标变化
+
+回到 Alice：
+
+1. 记住当前个性化 Feed 的 `request_id`。
+2. 点击一个内容、喜欢另一个内容，并对第三个内容选择“不感兴趣”。
+3. 让一张卡片至少 50% 可见并停留 750 ms，触发可见曝光。
+4. 打开“我的画像”，展示最近行为、正负偏好、画像版本和关联 request_id。
+5. 刷新个性化 Feed，展示“不感兴趣”内容被过滤，或排序/解释产生变化。
+
+随后登录 `admin / admin-pass`，打开 Dashboard：
+
+1. 展示请求数、服务曝光、可见曝光、点击、点赞和 CTR。
+2. 与行为前的基线比较，指出真实增量。
+3. 在请求链路查询中输入刚才的 request_id，展示用户、返回列表、曝光和行为关联。
+
+口播：
+
+> Feed、曝光和行为都写入 SQLite，Dashboard 从数据库聚合，不是前端固定数字。
+> request_id 可以把一次推荐、位置、曝光和后续行为串起来。
+
+## 3:05-4:20 Dashboard 强推、下线和线上验证
+
+保持管理员登录：
+
+1. 在内容运营中搜索预先准备的在线内容 ID。
+2. 创建强推：用户选择 Alice，Feed 选择个性化，位置为 0，有效期设为未来 24 小时，
+   原因填写 `demo promotion`。
+3. 登录 Alice 并刷新个性化 Feed，展示该内容位于指定位置，同时指出
+   `is_forced`、来源和 request_id。
+4. 切回管理员，将同一内容下线，原因填写 `demo offline verification`。
+5. 再登录 Alice，刷新个性化、热门和探索 Feed，确认该内容全部消失。
+6. 访问 `http://127.0.0.1:8000/api/v1/items/{item_id}`，确认直接 API 同样返回
+   404，证明不是只在前端隐藏。
+7. 管理员恢复内容，并打开审计记录，展示管理员、操作时间、原因和前后状态。
+
+口播：
+
+> 强推和下线都由服务端执行。下线优先级高于强推，因此内容下线后所有 Feed、旧快照
+> 和直接内容 API 都不能绕过；恢复和每次操作都有审计记录。
+
+## 4:20-5:00 测试、结果与边界
+
+在终端 A 展示测试命令和已有结果：
+
+```powershell
+uv run python -m pytest -q -p no:cacheprovider --basetemp=.tmp/pytest-demo-video
+```
+
+打开 `docs/VERIFICATION.md`，展示最近一次完整回归、模型版本和关键指标；再打开
+`docs/DELIVERY_CHECKLIST.md`，确认交付入口完整。
+
+最后口播：
+
+> 当前已完成从官方数据处理、训练评估、统一两阶段推荐、多人登录、行为回传、
+> Dashboard 到内容运营的真实闭环。Web 使用占位封面，不托管原始视频；SQLite 适合
+> 当前 MVP；HTTP 异步训练使用进程内线程；TypeScript sidecar 的 PostgreSQL 和
+> Elasticsearch 成功路径尚未在本机联调。
+
+## 录制后检查
+
+- 视频时长在 3-5 分钟内，声音清晰，终端文字能够辨认。
+- 五项要求都有真实画面，不只口头描述。
+- 两个用户的个性化结果在画面中能直接比较。
+- Dashboard 能看到行为后的真实增量。
+- 强推后内容出现，下线后 Feed 和直接 API 都无法返回。
+- 训练/评估命令、退出状态、模型版本和至少两项指标清晰可见。
+- 视频中没有真实密钥、Cookie、Token、个人路径信息或官方数据内容。
+- 上传后用无痕窗口验证链接无需申请权限即可播放。

@@ -365,12 +365,11 @@ def test_personalized_feed_events_profile_dashboard_and_isolation(api_env) -> No
         _login(admin, "admin", "admin-pass")
         alice_feed = alice.get("/api/v1/feeds/personalized?limit=2").json()
         bob_feed = bob.get("/api/v1/feeds/personalized?limit=2").json()
-        # The unified 7-source + DeepFM path is the sole personalized path. This
-        # fixture provisions no deep/multimodal artifacts, so warm dataset users
-        # fall back to the deterministic popular feed (not a per-user SVD mix).
-        assert alice_feed["fallback_reason"] == "unified_model_unavailable"
-        assert bob_feed["fallback_reason"] == "unified_model_unavailable"
-        assert [item["item_id"] for item in alice_feed["items"]] == [
+        # A clean smoke install has an SVD artifact before optional deep/visual
+        # artifacts exist, so warm users must retain distinct personalization.
+        assert alice_feed["fallback_reason"] == "unified_model_unavailable_svd_fallback"
+        assert bob_feed["fallback_reason"] == "unified_model_unavailable_svd_fallback"
+        assert [item["item_id"] for item in alice_feed["items"]] != [
             item["item_id"] for item in bob_feed["items"]
         ]
         assert {
@@ -448,8 +447,8 @@ def test_personalized_feed_events_profile_dashboard_and_isolation(api_env) -> No
         assert alice_feed["items"][1]["item_id"] in {
             item["item_id"] for item in next_feed["items"]
         }
-        assert next_feed["fallback_reason"] == "unified_model_unavailable"
-        assert all(item["source"] == "popular" for item in next_feed["items"])
+        assert next_feed["fallback_reason"] == "unified_model_unavailable_svd_fallback"
+        assert all(item["source"] == "svd" for item in next_feed["items"])
 
         overview = _dashboard(admin)
         assert overview["requests"] >= 3
@@ -1063,15 +1062,15 @@ def test_atomic_idempotent_batch_offline_restore_and_audit(api_env) -> None:
             ).fetchone()[0] == 1
 
 
-def test_personalized_falls_back_to_popular_when_deep_unavailable(api_env) -> None:
+def test_personalized_falls_back_to_svd_when_deep_unavailable(api_env) -> None:
     app, _, _ = api_env
     with TestClient(app) as alice:
         _login(alice, "alice")
         feed = alice.get("/api/v1/feeds/personalized?limit=3").json()
-        assert feed["fallback_reason"] == "unified_model_unavailable"
-        assert feed["diversity"]["source_mix"]["strategy"] == "fallback"
-        assert feed["diversity"]["source_mix"]["selected"]["popular"] >= 3
-        assert [item["source"] for item in feed["items"]] == ["popular"] * len(feed["items"])
+        assert feed["fallback_reason"] == "unified_model_unavailable_svd_fallback"
+        assert feed["diversity"]["source_mix"]["strategy"] == "svd_fallback"
+        assert feed["diversity"]["source_mix"]["selected"]["svd"] >= 3
+        assert [item["source"] for item in feed["items"]] == ["svd"] * len(feed["items"])
 
 
 def test_corrupt_model_falls_back_without_fabricating_model_result(api_env) -> None:
@@ -1090,7 +1089,7 @@ def test_corrupt_model_falls_back_without_fabricating_model_result(api_env) -> N
         response = alice.get("/api/v1/feeds/personalized?limit=3")
         assert response.status_code == 200
         payload = response.json()
-        assert payload["fallback_reason"] == "unified_model_unavailable"
+        assert payload["fallback_reason"] == "personalized_model_unavailable"
         assert payload["model_version"] == "fallback-popularity-v1"
         assert payload["items"]
         model_state = admin.get("/api/v1/admin/models").json()
