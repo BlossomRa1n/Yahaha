@@ -27,10 +27,10 @@ class Settings:
         load_dotenv()
         # The deep/experiment pointer defaults to ``experiment-current.json``, which
         # ``train_deep_experiment`` always writes. ``deep-current.json`` is only written
-        # when ``--publish`` passes the quality gate, so pointing the default at it would
-        # leave the online consumer empty for unpublishable experiments. Set
+        # when an explicit ``--publish`` request completes its publication checks, so
+        # pointing the default at it would leave the online consumer empty otherwise. Set
         # ``DEEP_MODEL_POINTER`` to ``artifacts/deep-current.json`` to serve only the
-        # published/quality-gated artifact.
+        # explicitly published artifact.
         experiment_pointer = os.getenv(
             "DEEP_MODEL_POINTER",
             os.getenv("EXPERIMENT_MODEL_POINTER", "artifacts/experiment-current.json"),

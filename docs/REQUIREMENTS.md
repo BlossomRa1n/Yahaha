@@ -57,13 +57,13 @@ move an item to `VERIFIED`.
 | UI-02 | P1 | Loading, empty, API, auth and image failure states | Frontend | Browser assertions | VERIFIED |
 | ENG-01 | P0 | CPU smoke path, explicit dependency install, `.env.example` | Lead + delivery | Clean-start smoke | VERIFIED |
 | ENG-02 | P0 | Unit/API/E2E tests and real evidence | Delivery + lead | Verification log | VERIFIED |
-| ENG-03 | P1 | PR/main CI without official data, GPU or secrets | Delivery | Local workflow-equivalent run; remote run requires repository authorization | DEGRADED |
+| ENG-03 | P1 | PR/main CI without official data, GPU or secrets | Delivery | GitHub Actions run `33817297423` passed all steps on `main` commit `970d23a` | VERIFIED |
 | ENG-04 | P1 | Optional Redis item cache with explicit no-op fallback and invalidation | Backend | Fake/no-op cache tests; live Redis not exercised | DEGRADED |
 | ENG-05 | P1 | HTTP-triggered asynchronous training job lifecycle | Backend | Queued/running/succeeded/failed API tests; full in-process training not rerun | DEGRADED |
 | ENG-06 | P1 | TypeScript/Bun/Express/Prisma/PostgreSQL/Elasticsearch interop sidecar | Integration | Source and failure-path contracts; toolchain/live services unavailable | DEGRADED |
 | DOC-01 | P0 | README, API, architecture, completeness and risk disclosure | Delivery + lead | Document review | VERIFIED |
 | DOC-02 | P0 | AI work log, prompts, human review and fixes | Lead | Diff-backed log | VERIFIED |
-| DEMO-01 | P0 | 3-5 minute reproducible demonstration script | Delivery | Script walkthrough | DEGRADED |
+| DEMO-01 | P0 | 3-5 minute reproducible demonstration and video link | Delivery | `docs/DEMO.md` plus the delivered Quark share link | VERIFIED |
 
 ## Two-Day Scope
 
@@ -89,11 +89,11 @@ Accepted degradations:
   and publishes only after evaluation/load validation. The HTTP job API runs the same
   flow in a daemon thread and persists job state, but is not a durable external queue.
 
-Out of scope: video hosting/playback, cloud deployment and distributed serving.
+Out of scope: MicroLens source-video hosting/playback, cloud deployment and distributed serving.
 Registration, optional Redis caching, in-process asynchronous training jobs, alerts,
 DSSM + DeepFM, checkpoint/early stopping, MobileNet text-image fusion, model
-comparison and event-window retraining are implemented. Live Redis, a durable worker
-queue, the TypeScript sidecar success path and remote CI evidence remain degraded.
+comparison and event-window retraining are implemented. Remote GitHub CI is verified.
+Live Redis, a durable worker queue and the TypeScript sidecar success path remain degraded.
 
 ## Critical Path and Risks
 

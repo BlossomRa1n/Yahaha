@@ -228,7 +228,8 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 - OpenAPI：`http://127.0.0.1:8000/docs`
 
 前端由 FastAPI 同源托管，不需要 `npm install` 或单独 dev server。模型缺失或损坏
-时 Feed 必须带 `fallback_reason` 并降级到热门/探索；不能伪造模型结果。
+时 Feed 必须带 `fallback_reason`：已映射 warm 用户优先回退个性化 SVD，cold 用户或
+基础模型不可用时回退热门/探索；不能伪造模型结果。
 
 ## 测试账号
 
@@ -401,7 +402,8 @@ revisit 只统计跨 request 的可见访问。Feed 使用带 TTL 的持久候�
 Mock：测试账号和占位封面是 seed/demo 辅助；自动化单元测试可生成合成数据。推荐
 列表、Dashboard 数字、事件、画像和运营状态不得使用固定前端 JSON。
 
-明确未做：视频播放/托管、云部署和远端 CI 运行验证。
+明确未做：MicroLens 原始视频播放/托管和云部署。远端 GitHub CI 已在 `main` 提交
+`970d23a` 上通过：[CI run 33817297423](https://github.com/BlossomRa1n/Yahaha/actions/runs/33817297423)。
 注册（scrypt 密码哈希 + HTTP-only session + 角色权限）已完整实现；
 DSSM+DeepFM、checkpoint/早停和 MobileNet 图文融合已实现并验证为统一生产路径；
 同步事件窗口重训、模型版本对比、Dashboard CSV 和本地 CI workflow 已实现；
@@ -417,7 +419,7 @@ Redis 缓存为可选加速（未配置 `REDIS_URL` 或缺少 redis 包时降级
 SQLite 并发写入能力有限；
 恢复后的普通候选只恢复“可参与推荐”，演示需保留有效强推规则来稳定证明重新可见。
 
-若增加一周：优先增加 Playwright 多浏览器 E2E、长时间压测和远端 CI 证据，再根据
+若增加一周：优先增加 Playwright 多浏览器 E2E、长时间压测和跨平台 CI 矩阵，再根据
 真实容量数据评估 PostgreSQL 与异步训练任务；不建议为技术名词展示迁移当前架构。
 
 ## 交付文档
