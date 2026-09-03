@@ -14,7 +14,9 @@
 
 3. 展示 `summary.json` 的用户/内容/交互/时间边界，以及 `evaluation.md` 中 popular、
    random、SVD 的 Recall@10、NDCG@10、HitRate@10。
-4. 展示 `artifacts/current.json` 后初始化并启动服务。说明训练失败不会替换可用版本。
+4. 展示 `artifacts/current.json`、`experiment-current.json` 和
+   `multimodal-current.json`：SVD 是统一召回的一路，个性化生产链路由七路召回和
+   DeepFM 排序组成；深度或视觉产物校验失败时明确回退热门/探索。随后初始化并启动服务。
 
 ## 0:40–1:35 多用户与三路 Feed
 
@@ -29,12 +31,13 @@
 1. 回到 `alice`；点击一个内容、喜欢另一个内容，并对第三个选择“不感兴趣”。
 2. 打开“我的画像”，展示事件类型、item、request_id、画像版本及正/负向内容。
 3. 重新请求个性化 Feed，展示不感兴趣内容被过滤，或相关排序/解释发生可观察变化。
-4. 说明 impression 由服务端在 Feed 响应事务中写入，浏览器不会重复上报。
+4. 说明 Feed 返回只产生服务曝光；卡片达到 50% 可见并持续 750 ms 后，浏览器才以
+   稳定 event_id 批量上报可见曝光。
 
 ## 2:20–3:05 Dashboard 与链路诊断
 
-1. 登录 `admin`，打开 Dashboard，展示真实用户、活跃用户、请求、曝光、点击、CTR、
-   喜欢、Feed 分布、热门内容和当前模型。
+1. 登录 `admin`，打开 Dashboard，展示真实用户、活跃用户、请求、服务曝光、可见
+   曝光、服务 CTR、可见 CTR、喜欢、Feed 分布、热门内容和当前模型。
 2. 对比行为前记录的数值，刷新后指出实际增量。
 3. 粘贴刚才的 request_id，展示请求用户、Feed、模型、返回列表、曝光及行为关联；再
    查询 alice 的画像与最近请求。
@@ -54,7 +57,9 @@
 
 1. 展示 `uv run pytest` 的真实退出码与测试摘要，并打开 `docs/VERIFICATION.md`。
 2. 展示 `.env.example`、测试账号和 README 干净启动步骤。
-3. 如实陈述降级：响应即曝光、占位封面、SQLite、非持久 cursor、无在线训练。
+3. 如实陈述边界：Web 只分发占位封面，官方封面仅用于本地离线特征；SQLite 使用 TTL
+   快照；HTTP 异步训练使用进程内线程而非持久任务队列；TypeScript sidecar 的
+   PostgreSQL/Elasticsearch 成功路径尚未在本机联调。
 4. 如有失败或未验证项，直接展示为 PENDING/FAILED，不口头宣称完成。
 
 ## 录制前核对

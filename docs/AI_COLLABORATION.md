@@ -69,7 +69,8 @@ Prompt summary:
 - Modify only the assigned `recsys/**` and data/model test files. Return exact
   commands, output shapes, metrics, timing and remaining evaluation risks.
 
-Agent output:
+Agent output（历史实现；下述 server impression/cursor 语义已被 2026-09-02
+viewable-impression 与持久快照升级取代）:
 
 - Implemented official pairs/titles/likes-views parsing, deterministic split
   files, histories and summary; untimed likes/views were excluded from offline
@@ -92,8 +93,9 @@ Review and corrections:
   this MVP does not automatically search hyperparameters.
 - Warm-item test coverage is only `0.237160` and remains disclosed. The online
   system therefore needs popular/explore fallback for time-new content.
-- Online events are not automatically exported into a new offline training run;
-  this remains a documented batch-integration gap.
+- At that historical checkpoint, online events were not integrated into a new
+  offline run. This statement is superseded by the synchronous, windowed
+  `retrain-events` implementation and its cutoff/idempotency tests.
 
 ### Backend and recommendation-service implementation
 
@@ -246,3 +248,55 @@ Python compilation, official-data smoke training, the official E2E script and br
 One additional UI contract mismatch was found during parent review: the model table error row retained
 the old five-column span after the data-version column was added. It was corrected to six and verified
 with the final Web checks. Agent summaries were not used as completion evidence without these reruns.
+
+## 2026-09-02 Strategy-Consistency and Session Closeout
+
+- The lead re-read the assessment and the historical model-optimization plan, then
+  compared the actual online fixed quota mixer with offline `hybrid_all_sources`.
+  The two paths were demonstrably different, so prior five-source metrics were not
+  accepted as an online-policy replay.
+- A shared pure `mix_candidates` contract was introduced for both training and Feed.
+  Candidates now carry eligibility, confidence and support; non-finite candidates and
+  zero/unsupported CF rows are removed before rank normalization. Validation alone
+  compares the bounded safe/dynamic policies, writes the selected policy to the
+  manifest, and test evaluates only that lock.
+- Full-data training with sampled-all-items validation rejected `dynamic_confidence_v2`:
+  sampled-all-items Recall/NDCG
+  `0.283030/0.147777` versus safe `0.382142/0.181380`. The published artifact therefore
+  uses `safe_svd_content_v2`; test sampled-all-items Recall/NDCG/HitRate remains
+  `0.367097/0.150900/0.479800` with cold coverage `0.998687`.
+  The final rerun with Top-10 quota/Jaccard diagnostics published
+  `svd-20260902T143346986486Z-ab4c3e04` without changing those metrics.
+- Session expiry review found no production defect. A new API test sets the stored
+  expiry in the past, proves 401 from auth/feed/admin routes, proves login cleanup and
+  old-cookie rejection, and rechecks ordinary/admin isolation.
+- CI evidence remains local only. No commit, push, PR or other remote mutation was
+  performed in this round.
+
+## 2026-09-02 DSSM/DeepFM and Multimodal Experiment Round
+
+- The implementation kept PyTorch as the single deep-learning framework. DSSM and
+  DeepFM use the existing chronological split, cutoff-safe title/profile/popularity
+  features, deterministic mixed negatives and independent experiment pointers. Each
+  epoch wrote safetensors weights plus optimizer/training state; patience-based early
+  stopping selected DSSM epoch 3 and DeepFM epoch 1.
+- Validation compared independent DSSM, DSSM+DeepFM, rank-fusion and protected
+  reranking candidates. The locked `protected_top10_rerank` policy retained stable
+  Top-10 membership while improving order. Test was run only after validation lock;
+  it was not used to return to tuning.
+- One attempted comparison omitted `--max-eval-users 5000`. The query-set hash gate
+  rejected it before expensive training, and its metrics were not compared. Repeated
+  non-resume training also exposed a Windows checkpoint-directory collision; unique
+  checkpoint directories fixed it without weakening checkpoint validation.
+- Multimodal work used the official local cover archive and real pretrained
+  MobileNetV3-Small weights. All 19,220 items mapped to readable images; 11 duplicate
+  images were reported. PCA-128 was fitted only on 16,907 train-visible items, and
+  user visual profiles used only cutoff-safe positive history.
+- Validation compared text-only, visual-only and fusion on the same query hashes.
+  Static visual weight `0.20` passed the Full and cold gates. Two later fine-search
+  rounds failed the specified 1% Full / 3% cold improvement threshold, so the loop
+  stopped and retained `0.20` rather than using test results to keep tuning.
+- Both artifacts remain isolated experiments. Online loading, combined inference and
+  failure fallback were verified, but `artifacts/current.json` still points to
+  `safe_svd_content_v2`. No commit, push, branch, PR, production publication or remote
+  CI trigger was performed.

@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ENV: test
+      APP_SECRET: ci-only-secret-with-at-least-32-characters
+      APP_DATABASE: .tmp/ci-app.db
+      MODEL_POINTER: .tmp/ci-artifacts/current.json
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies
+        run: uv sync --locked --group dev
+      - name: Python tests
+        run: uv run python -m pytest -p no:cacheprovider
+      - name: Python compile check
+        run: uv run python -m compileall -q app recsys scripts tests
+      - name: JavaScript syntax checks
+        run: |
+          node --check web/app.js
+          node --check web/api.js
+      - name: Synthetic data, model, migration and health smoke
+        run: uv run python -m scripts.ci_smoke

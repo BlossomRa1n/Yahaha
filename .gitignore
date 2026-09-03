@@ -4,6 +4,15 @@ data/processed/
 data/processed_blocked/
 data/staging/
 artifacts/
+# Deep/vision training state and exported weights stay local even outside artifacts/.
+checkpoints/
+*.safetensors
+*.ckpt
+*.onnx
+# Official cover archives, extracted images, and cached visual features are local-only.
+MicroLens-50k_covers.zip
+MicroLens-50k_covers/
+visual-cache/
 *.db
 *.db-shm
 *.db-wal
@@ -23,6 +32,8 @@ artifacts/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest-tmp/
+.test-tmp/
 .coverage
 htmlcov/
 node_modules/

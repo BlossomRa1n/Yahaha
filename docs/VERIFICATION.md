@@ -37,11 +37,28 @@
 | V-11 | Secret/raw audit | Inspect tracked files and all committed paths/history | No raw/processed data, artifact, DB, `.env`, DOCX or large model file is tracked; meaningful module commits exist | Main-thread Git audit | PASSED |
 | V-12 | Clean environment | Clone committed history, add user-supplied official raw input, repeat README smoke | Locked sync, pipeline, seed, 15 tests, JS and health all exited 0 | Main-thread clean clone | PASSED |
 | V-13 | Live event/Dashboard smoke | Feed then click/like against running service | `+1` request, `+5` exposures, `+1` click and `+1` like observed in real aggregates | Main-thread API smoke | PASSED |
-| V-14 | Mandatory official-data E2E | `.venv\\Scripts\\python.exe -m scripts.verify_official_e2e` | Exit 0; 19,220 items; alice/bob differ; carol cold start; Dashboard `+5/+37/+1/+1`; boost/offline/restore/audit/logout passed | Main-thread rerun, 2026-09-02 | PASSED |
-| V-15 | Expanded regression | `.venv\\Scripts\\python.exe -m pytest -p no:cacheprovider` | Final rerun: `26 passed, 1 warning in 9.47s`; only third-party Starlette/httpx deprecation warning | Main-thread rerun, 2026-09-02 | PASSED |
+| V-14 | Mandatory official-data E2E | `.venv\\Scripts\\python.exe -m scripts.verify_official_e2e` | Exit 0; 19,220 items; alice/bob differ; carol cold start; stable snapshot replay; Dashboard `+6 requests/+45 served/+3 viewable/+1 click/+1 like`; boost/offline/restore/audit/logout passed | Main-thread rerun, 2026-09-02 | PASSED |
+| V-15 | Expanded regression | `.venv\\Scripts\\python.exe -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-final-rerun` | Final rerun: `31 passed, 1 warning in 13.79s`; only third-party Starlette/httpx deprecation warning | Main-thread rerun, 2026-09-02 | PASSED |
 | V-16 | Fresh smoke output | `.venv\\Scripts\\python.exe -m recsys.pipeline all --raw-dir data/raw --out-dir .tmp/closeout-smoke-final2/processed --artifacts-dir .tmp/closeout-smoke-final2/artifacts --mode smoke --rank 8 --seed 20260902` | Exit 0; 359,708 interactions; chronological `287,767/35,971/35,970` split; 19,220 items; artifact published with evaluation and anonymized Badcases | Main-thread rerun, 2026-09-02 | PASSED |
 | V-17 | Browser network recovery | Stop service, refresh Dashboard, restart same service, click retry | Visible connection error and retry control; retry restored real Dashboard; 390 px viewport reset after mobile verification | Main-thread in-app browser, 2026-09-02 | PASSED |
 | V-18 | Current-source clean reproduction | Copy only deliverable source to ignored clean directory; offline locked sync; smoke pipeline; DB seed; pytest/JS/compile; start Uvicorn on 8011 and query health | 30 locked packages installed; 359,708 interactions/19,220 items; `26 passed`; health `status=ok`, `database=ok`, smoke model loaded without error | Main-thread rerun, 2026-09-02 | PASSED |
+| V-19 | Shared policy sampled-all-items evaluation | `.venv\Scripts\python.exe -m recsys.pipeline train --processed-dir data/processed --artifacts-dir artifacts --mode full --rank 32 --seed 20260901` | Final rerun exit 0; validation rejected dynamic sampled R/N `0.283030/0.147777` against safe `0.382142/0.181380`; published `svd-20260902T143346986486Z-ab4c3e04` with `safe_svd_content_v2`; Top-10 quota 7 model/3 cold content, zero relaxation/duplicates; test sampled R/N/H `0.367097/0.150900/0.479800`, cold coverage `0.998687` | Main-thread run, 2026-09-02 | PASSED |
+| V-20 | Mixer/Feed/operations regression | `.venv\Scripts\python.exe -m pytest tests/test_model.py tests/test_data.py tests/test_content_recall.py tests/test_hybrid_recall.py tests/test_popularity.py tests/test_diversity.py tests/test_api.py tests/test_engagement_events.py -q --basetemp .test-tmp/mix-regression -p no:cacheprovider` | `33 passed`; only third-party Starlette/httpx warning | Main-thread run, 2026-09-02 | PASSED |
+| V-21 | Session expiry | `.venv\Scripts\python.exe -m pytest tests/test_api.py::test_expired_session_is_rejected_cleaned_on_relogin_and_cannot_be_reused tests/test_api.py::test_auth_logout_admin_forbidden_and_sqlite_pragmas -q --basetemp .test-tmp/session-expiry -p no:cacheprovider` | `2 passed`; expired auth/feed/admin all 401, relogin cleanup, stale Cookie denial and role isolation covered | Main-thread run, 2026-09-02 | PASSED |
+| V-22 | Final repository regression | `.venv\Scripts\python.exe -m pytest -q --basetemp .test-tmp/final-after-latency -p no:cacheprovider` | `56 passed`; only third-party Starlette/httpx warning | Main-thread run, 2026-09-02 | PASSED |
+| V-23 | Final official E2E | `.venv\Scripts\python.exe -m scripts.verify_official_e2e --items data/processed/items.csv --model-pointer artifacts/current.json` | First two reruns failed on obsolete hard requirements for `item_cf` exposure; contract was aligned to the validation-locked policy. Final two reruns exited 0: 19,220 items, safe policy, source counts 14 model/2 content, A/B/cold start/snapshot/events/Dashboard/ops/logout passed. Avoiding unused safe-policy sources reduced same-script personalized mean/max from 522.67/861.60 ms to 361.24/567.00 ms. | Main-thread reruns, 2026-09-02 | PASSED after retained failures |
+| V-24 | Final local CI equivalent | `.venv\Scripts\python.exe -m pytest tests/test_web_contract.py tests/test_ci_contract.py ...`; `compileall`; both `node --check`; `.venv\Scripts\python.exe -m scripts.ci_smoke` | Contract `9 passed`; compile and JS exits 0; smoke status passed with 1,500 interactions, 150 items, 3 events, DB/model OK and `safe_svd_content_v2` | Main-thread run, 2026-09-02 | PASSED locally; remote unverified |
+| V-25 | DSSM/DeepFM MVP and optimization | `.venv\Scripts\python.exe -m recsys.pipeline train-deep --mode full --max-eval-users 5000 --epochs 8 --patience 2` plus validation-only protected-rerank search | Real PyTorch DSSM/DeepFM trained on 287,767 interactions; safetensors checkpoints restored/exported; DSSM early-stopped at epoch 5 (best 3), DeepFM at epoch 3 (best 1); locked `deep-20260902T175056309503Z-fff15189` | Full artifact, training history, query hashes and contract tests inspected, 2026-09-02 | PASSED as isolated experiment |
+| V-26 | Official-cover multimodal MVP and optimization | `.venv\Scripts\python.exe -m recsys.pipeline train-multimodal --batch-size 64 --pca-dim 128 --max-eval-users 5000 --locked-visual-weight 0.20` | 19,220/19,220 covers mapped and parsed, 11 duplicate images, real pretrained MobileNetV3-Small, train-visible-only PCA-128, locked `multimodal-20260902T180847621178Z-7e09b190`; two later fine-search rounds missed the improvement threshold and stopped | Extraction/manifest/query hashes and contract tests inspected, 2026-09-02 | PASSED as isolated experiment |
+| V-27 | Combined experimental serving | Temporary official-data SQLite HTTP smoke plus 25-user direct inference timing | Source `dssm_deepfm_multimodal`; direct P50/P95/P99 75.82/83.40/84.78 ms; first HTTP Feed 422/446 ms, cursor pages about 9 ms; users differed, no duplicates/fallback, MobileNet evidence present | Main-thread smoke, 2026-09-02 | PASSED |
+| V-28 | Deep/multimodal contracts and fallback | `.venv\Scripts\python.exe -m pytest tests/test_deep_models.py tests/test_multimodal.py ...` and combined hybrid/deep/multimodal targets | Deep/multimodal contracts `8 passed`; combined affected targets `14 passed`; corruption, incompatible metadata, checkpoint/restore and stable fallback covered | Main-thread targeted runs, 2026-09-02 | PASSED |
+| V-29 | Frozen full regression | `.venv\Scripts\python.exe -m pytest --basetemp .test-tmp/final-freeze-summary-20260903 -p no:cacheprovider` | `64 passed, 1 warning in 27.93s`; warning is the known third-party Starlette/httpx deprecation | Main-thread rerun, 2026-09-03 | PASSED |
+| V-30 | Frozen compile/Web/local CI | `.venv\Scripts\python.exe -m compileall -q app recsys scripts tests`; `node --check web/app.js`; `node --check web/api.js`; `.venv\Scripts\python.exe -m scripts.ci_smoke` | All exited 0; CI smoke processed 1,500 interactions/150 items, accepted 3 events and loaded `safe_svd_content_v2` | Main-thread rerun, 2026-09-03 | PASSED locally; remote unverified |
+| V-31 | Frozen official-data E2E | `.venv\Scripts\python.exe -m scripts.verify_official_e2e --items data/processed/items.csv --model-pointer artifacts/current.json` | First freeze run reached operations but intermittently observed zero Dashboard revisits and failed; identical rerun exited 0 with 19,220 items, A/B, cold start, stable cursor, dwell/share/revisit, Dashboard `+6/+45/+3/+1/+1/+1`, boost/offline/restore/audit and logout. Failure retained as a flaky E2E observation; focused revisit tests remained green. | Main-thread reruns, 2026-09-03 | PASSED after retained transient failure |
+| V-32 | Freeze hygiene and remote boundary | `git diff --check`; `git remote -v`; `git ls-files`; inspect stable/deep/multimodal pointers | Diff check exit 0 (line-ending notices only); origin is `https://github.com/BlossomRa1n/Yahaha.git`; no tracked raw covers/data, checkpoints, weights, DB or secrets; stable pointer unchanged and experiment pointers reference locked versions | Main-thread inspection, 2026-09-03 | PASSED locally; no remote write/run |
+| V-33 | Unified seven-source two-stage experiment | `uv run python -m recsys.pipeline train-deep --mode full --max-eval-users 5000 --epochs 8 --patience 2`, then one locked test run from checkpoint | Real 287,767-interaction DSSM/DeepFM training; SVD/DSSM/content/visual/item-CF/popular/explore union; 17 continuous + 5 categorical fields; 186,695 deterministic cold-start dropout rows; DSSM best epoch 3, DeepFM best epoch 1, both early-stopped; artifact `deep-20260903T045748115694Z-a8df9062` | Sampled-all-items manifest/metrics/checkpoint reload, real-user Feed and mismatch fallback smoke, 2026-09-03 | PASSED as experiment; release gate FAILED on sampled-all-items Recall |
+| V-34 | Scheme B regression and hygiene | `uv run pytest -q`; `compileall`; `node --check`; `uv run python scripts/ci_smoke.py`; `git ls-files` | `71 passed`; compile/JS exit 0; CI smoke passed; final real-user union 657 and Top-10 included DSSM/visual/content/item-CF primary sources; incompatible multimodal version fell back to stable SVD; no tracked model/data/cover/DB files | Main-thread run, 2026-09-03 | PASSED locally |
+| V-35 | Unified sampled-negative protocol | Full pytest, compileall, `scripts.ci_smoke`, diff check, then non-publishing GPU `train-deep` smoke with validation and locked test | 80 tests passed; stable/deep/visual use `deterministic_sampled_negatives_v1`; new stable metrics use `sampled_all_items` with legacy `full_catalog` reads covered; CUDA smoke used RTX 5070 and finished in 35.1 s; artifact `deep-20260903T134019966433Z-440b2b95`; mismatched 500-user cohort correctly failed release gate; no pointer updated | Main-thread run, 2026-09-03 | PASSED locally; NOT PUBLISHED |
 
 ## Offline Metrics
 
@@ -53,12 +70,16 @@ generated `metrics.json`.
 |---|---|---|---|---|---|---|
 | `svd-20260901T121430026505Z-cccf5c24` | `microlens50k-cb7fb01dc9f42b6b` | full | test: 5,000 users, 100 negatives, coverage 0.237160 | Popular R/N/H 0.246499/0.123706/0.281800; random 0.089834/0.043384/0.108800; SVD 0.359176/0.208986/0.399000 | `manifest.json`, `metrics.json` inspected | PASSED |
 | `svd-20260902T022510026424Z-cccf5c24` | `microlens50k-cb7fb01dc9f42b6b` | full | test: 5,000 users, 100 negatives, coverage 0.237160 | Popular R/N/H 0.246499/0.123706/0.281800; random 0.089834/0.043384/0.108800; SVD 0.359176/0.208986/0.399000 | Current manifest/metrics and generated Badcases inspected; official E2E consumed this version | PASSED |
+| `svd-20260902T143346986486Z-ab4c3e04` | `microlens50k-cb7fb01dc9f42b6b` | full-data train | test: 5,000 users, 100 negatives, warm coverage 0.237160; sampled cold coverage 0.998687 | Locked safe policy warm R/N/H 0.359176/0.208986/0.399000; sampled-all-items 0.367097/0.150900/0.479800; dynamic validation failed sampled 1% gate | Training output and manifest/metrics inspected | PASSED |
+| `deep-20260902T175056309503Z-fff15189` | `microlens50k-cb7fb01dc9f42b6b` | full experiment | test: same locked 5,000-user Full/Warm query hashes; candidate/cold coverage 1.0 | Protected rerank Full R/N/H 0.367097/0.234943/0.479800 vs stable 0.367097/0.150900/0.479800; Warm 0.359176/0.216400/0.399000 vs 0.359176/0.208986/0.399000; validation DeepFM AUC 0.727496 vs linear 0.642042 | Manifest, metrics, training history and reload inspected | PASSED as isolated experiment |
+| `multimodal-20260902T180847621178Z-7e09b190` | `microlens50k-cb7fb01dc9f42b6b` | full experiment | same locked 5,000-user query hashes; visual/cold-item coverage 1.0 | Validation text R/N 0.291515/0.210490, visual 0.253712/0.149744, fusion 0.310377/0.213680; cold fusion R/N 0.331548/0.221732; final test fusion R/N/H 0.276839/0.185855/0.358200 | Manifest, extraction report, metrics and fallback tests inspected | PASSED as isolated experiment |
+| `deep-20260903T045748115694Z-a8df9062` | `microlens50k-cb7fb01dc9f42b6b` | unified seven-source experiment | same locked 5,000-user sampled-all-items/Warm query hashes; candidate/cold coverage 1.0 | Validation unified R/N/H 0.319631/0.205171/0.413400 vs stable 0.382142/0.181380/0.486200; Warm 0.362642/0.227026/0.409600 vs stable 0.359512/0.218799/0.409600; AUC 0.708714 vs linear 0.687647. Locked test sampled R/N/H 0.257060/0.159583/0.342000 | Manifest, metrics, checkpoint reload, real-user online and failure fallback smoke | VALID EXPERIMENT; NOT PUBLISHABLE (sampled Recall gate) |
 
 ## End-to-End Acceptance
 
 | Flow | Evidence to record | Result | Status |
 |---|---|---|---|
-| Login/session/isolation | 3 normal users, admin, refresh, logout, 401/403 | Automated auth/logout/403/isolation tests passed; browser login covered alice and admin, not all 3 normal users | PASSED (automated), PARTIAL (browser) |
+| Login/session/isolation | 3 normal users, admin, refresh, expiry, logout, 401/403 | Automated auth/logout/expiry/old-cookie/403/isolation tests passed; browser login covered alice and admin, not all 3 normal users | PASSED (automated), PARTIAL (browser) |
 | Three feeds | request_id, provenance, pagination, A/B difference, cold start | Automated Feed contract passed; backend agent reported real alice/bob differences; main thread verified offline removal from all three feeds. Full browser A/B, pagination and carol cold-start sequence remains | PARTIAL |
 | Event/profile | DB event linkage and before/after profile/rank | Main API smoke produced +1 request/+5 exposures/+1 click/+1 like; browser showed alice behavior and updated profile | PASSED |
 | Dashboard | Numeric baseline and post-action delta | Main thread observed real post-action deltas and admin Dashboard; top items came from DB aggregation | PASSED |
@@ -71,6 +92,24 @@ generated `metrics.json`.
 ## Append-Only Run Notes
 
 Add dated entries below. Include failures and subsequent fixes; never replace an earlier failed run.
+
+### 2026-09-02 — Shared mixing and session closeout
+
+- The original offline `hybrid_all_sources` and online fixed buckets were not the
+  same algorithm. A shared pure mixer now drives both. Sampled-all-items validation rejected
+  the dynamic policy on Recall/NDCG and locked the safe policy; test remained
+  equal to the prior SVD/content fallback instead of publishing the degraded five-source list.
+- The official E2E initially failed at two separate assertions that demanded
+  `item_cf` in served/dashboard sources. Those assertions encoded source count as
+  quality and contradicted the locked safe policy. Both failures were retained;
+  the script now validates the response policy version, source compatibility and
+  zero duplicates. The identical command then passed twice, including after the
+  safe-path latency optimization.
+- Session expiry tests set the stored expiry in the past and proved 401 on auth,
+  Feed and admin routes, cleanup on relogin, stale-cookie rejection and role isolation.
+- At this historical checkpoint remote CI was unverified and no Git remote was
+  configured. The final freeze later configured the correct `origin` (V-32), but no
+  credential was exercised and no commit, push, PR, remote run or publication occurred.
 
 ### 2026-09-01 — Static Web implementation
 
@@ -168,11 +207,12 @@ Add dated entries below. Include failures and subsequent fixes; never replace an
   `/api/v1/health` 返回 `status=ok / database=ok / model_version=<新版本> / model_error=null`。
   真实模型下：alice/bob 个性化 source=model、fallback=None；**A/B 首项不同**；carol
   fallback=cold_start、source=popular；分页 page1/page2 各 5 项、**重叠为空**。
-- **8a**：新增 `python -m app.cli export-events`（click=1/like=3 加权，以重复行表达强度；
-  impression/not_interested 与无 dataset_user_id 的用户排除；输出 `user,item,timestamp`，
-  timestamp 为 epoch 毫秒，与 data/raw 同单位）。单元测试 2 项。
+- **8a**：`python -m app.cli export-events` 保持一事件一行，输出
+  `user,item,timestamp,event_type,weight`；click=1/like=3 是显式权重列，
+  `consumed_by_training=false`，不会混入旧 benchmark。
 - **9-1 / 9-2a / 9-3a**：dashboard 新增 p50/p95/p99/max 延迟分位；新增
-  `GET /api/v1/admin/dashboard/timeseries`（metric∈requests/exposures/clicks/likes，自动
+  `GET /api/v1/admin/dashboard/timeseries`（metric∈requests/served_exposures/
+  viewable_impressions/clicks/likes，自动
   hour/day 分桶）+ 前端 SVG 折线 + 指标下拉；新增 JSON 结构化日志（`app/logging.py` +
   请求日志中间件，每请求一条 JSON：request_id/method/path/status_code/duration_ms）。
 - **环境差异提示（诚实记录）**：本会话 PowerShell 为 5.1、`git` 不在 PATH，与上表 Environment
@@ -219,12 +259,13 @@ DevTools → Console（全程零 error/警告），窗口分别用 1440px 与 39
   protocol and Popular/Random/SVD metrics match the prior deterministic run, and both validation and
   test payloads now include five anonymized, ranked SVD Badcases with miss reasons and coverage
   context.
-- Main-thread full regression returned `26 passed, 1 warning in 9.55s`; Python `compileall` and both
+- Main-thread final full regression returned `31 passed, 1 warning in 13.79s`; Python `compileall` and both
   JavaScript syntax checks exited `0`. The warning remains the third-party Starlette/httpx
   deprecation notice.
 - `python -m scripts.verify_official_e2e` exited `0` against the current official artifact. It
-  imported 19,220 items, proved alice/bob personalized differences, carol `cold_start`, request and
-  event linkage, Dashboard delta `+5 requests/+37 exposures/+1 click/+1 like`, all-feed boost,
+  imported 19,220 items, proved alice/bob personalized differences, carol `cold_start`, stable
+  snapshot replay, request/event linkage, and Dashboard delta `+6 requests/+45 served exposures/
+  +3 viewable impressions/+1 click/+1 like`; it also covered all-feed boost,
   offline precedence across three feeds plus item/cover APIs, restore/audit and logout `401`.
 - Browser verification showed real model-backed personalized results, profile version/ranking
   response to behavior, trusted Feed/source plus request ID in recent behavior, real Dashboard
@@ -247,3 +288,35 @@ DevTools → Console（全程零 error/警告），窗口分别用 1440px 与 39
   `/api/v1/health` returned the full official model with `status=ok`, `database=ok` and
   `model_error=null`; server output contained exactly one correlated `app.access` JSON record for
   that request and no duplicate `uvicorn.access` record.
+
+## 2026-09-02 Semantics and Snapshot Upgrade
+
+- Feed request with 12 items persisted 12 served exposures and zero automatic impressions.
+  Browser verification then produced exactly 3 viewable impressions for cards meeting 50%/750 ms.
+- Cursor tests cover signed user/feed binding, tamper rejection, TTL expiry, deterministic replay,
+  profile/model/new-boost isolation, immediate offline invalidation and no restore reactivation.
+- Official data isolation smoke processed 359,708 interactions and published a temporary model
+  artifact whose metadata records cutoff-safe cumulative/1/7/30-day/decay/growth popularity
+  features. The cumulative likes/views snapshot had `available_at=null` and was excluded.
+- Forward migration was applied to a temporary copy of the prior SQLite DB; all 19,220 items
+  remained and the snapshot/provenance tables and trace columns were present.
+
+## 2026-09-04 Delivery Audit
+
+- The first direct pytest rerun could not scan the user-level Windows temporary
+  directory and stopped with `WinError 5`; this was an environment permission
+  failure before affected fixtures ran, not a product assertion failure.
+- `uv run python -m pytest -q -p no:cacheprovider --basetemp=.tmp/pytest-delivery-20260904-02`
+  then exited `0` with **102 passed** and one known Starlette/httpx deprecation
+  warning. The base directory was a new ignored workspace path.
+- Git history contains six meaningful local commits before the current delivery work.
+  A tracked-path audit found no dataset, model/checkpoint, database, `.env`, assessment
+  document or secret-bearing generated artifact.
+- `origin` is configured as `https://github.com/BlossomRa1n/Yahaha.git`. The remote was
+  empty/unverified at the start of this audit; push and remote branch verification are
+  recorded only after they actually succeed.
+- The TypeScript interop directory is source-only on this machine: Bun, a TypeScript
+  compiler, installed packages and a dependency lockfile are absent. Live PostgreSQL,
+  Elasticsearch and upstream proxy success paths have not been verified.
+- The required 3-5 minute demonstration recording and public video link remain
+  **PENDING**. `docs/DEMO.md` is the prepared recording procedure, not video evidence.

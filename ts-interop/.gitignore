@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local environment (never commit real credentials)
+.env
+
+# Prisma generated client (regenerate with `bun run prisma:generate`)
+node_modules/.prisma/
+
+# Logs
+*.log

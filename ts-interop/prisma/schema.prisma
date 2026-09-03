@@ -1,0 +1,205 @@
+// Prisma schema for the MicroLens interop sidecar.
+//
+// This mirrors the CORE tables of the upstream SQLite schema (app/db.py):
+//   users, items, events, exposures, recommendation_requests, operations,
+//   model_versions.
+//
+// Design notes / deviations (all deliberate and documented here):
+//   * No fields are invented. Column names are preserved via @map(...).
+//   * SQLite CHECK constraints are mirrored as PostgreSQL enums where possible;
+//     numeric range checks (e.g. dwell_ms BETWEEN 750 AND 600000) are NOT
+//     enforced by PostgreSQL and are instead validated in the ingest route.
+//   * SQLite TEXT timestamps are mapped to timestamptz(6) to preserve the
+//     microsecond precision used upstream.
+//   * SQLite INTEGER 0/1 booleans are mapped to native booleans.
+//   * SQLite `username ... UNIQUE COLLATE NOCASE` is mirrored as a plain
+//     case-sensitive UNIQUE (PostgreSQL needs citext for NOCASE; not included).
+//   * events.user_id is nullable here (upstream is NOT NULL) because the sidecar
+//     ingest path has no authenticated session to derive it from; the ClientEvent
+//     wire shape carries no user_id.
+//   * Foreign-key RELATIONS are intentionally NOT declared between models: the
+//     sidecar mirrors columns, and the write path only ever touches `events`.
+//     Referential integrity across tables remains the upstream app's concern.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums (mirroring SQLite CHECK constraints)
+// ---------------------------------------------------------------------------
+
+enum Role {
+  user
+  analyst
+  operator
+  admin
+}
+
+enum ItemStatus {
+  online
+  offline
+}
+
+// events.event_type CHECK in app/db.py. Note: the client may send "favorite"
+// but upstream normalizes it to "like" before persisting; the ingest route
+// mirrors that normalization, so "favorite" never reaches this enum.
+enum EventType {
+  impression
+  click
+  like
+  not_interested
+  dwell
+  share
+  revisit
+}
+
+enum FeedType {
+  personalized
+  popular
+  explore
+}
+
+enum ModelStatus {
+  active
+  inactive
+  failed
+}
+
+enum TrainingStatus {
+  running
+  succeeded
+  failed
+}
+
+enum PublishStatus {
+  not_published
+  published
+  failed
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String   @id
+  username      String   @unique // upstream is UNIQUE COLLATE NOCASE (see note)
+  datasetUserId String?  @unique @map("dataset_user_id")
+  passwordHash  String   @map("password_hash")
+  role          Role
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @map("created_at") @db.Timestamptz(6)
+
+  @@map("users")
+}
+
+model Item {
+  itemId               String     @id @map("item_id")
+  title                String     @map("title")
+  likes                Int        @default(0) @map("likes")
+  views                Int        @default(0) @map("views")
+  popularityScore      Float      @default(0) @map("popularity_score")
+  statsSnapshotVersion String?    @map("stats_snapshot_version")
+  statsAvailableAt     DateTime?  @map("stats_available_at") @db.Timestamptz(6)
+  coverUrl             String?    @map("cover_url")
+  status               ItemStatus @default(online) @map("status")
+  statusVersion        Int        @default(1) @map("status_version")
+  createdAt            DateTime   @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime   @map("updated_at") @db.Timestamptz(6)
+
+  @@map("items")
+}
+
+model Event {
+  eventId         String    @id @map("event_id")
+  eventType       EventType @map("event_type")
+  requestId       String    @map("request_id")
+  userId          String?   @map("user_id") // nullable deviation (see note)
+  itemId          String    @map("item_id")
+  position        Int       @map("position")
+  clientTimestamp DateTime? @map("client_timestamp") @db.Timestamptz(6)
+  dwellMs         Int?      @map("dwell_ms")
+  visitIndex      Int?      @map("visit_index")
+  receivedAt      DateTime  @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  @@map("events")
+}
+
+model Exposure {
+  id               Int      @id @default(autoincrement())
+  requestId        String   @map("request_id")
+  userId           String   @map("user_id")
+  itemId           String   @map("item_id")
+  position         Int      @map("position")
+  source           String   @map("source")
+  score            Float    @map("score")
+  rawScore         Float?   @map("raw_score")
+  normalizedScore  Float?   @map("normalized_score")
+  rankInSource     Int?     @map("rank_in_source")
+  explanation      String   @map("explanation")
+  modelVersion     String?  @map("model_version")
+  isForced         Boolean  @default(false) @map("is_forced")
+  snapshotId       String?  @map("snapshot_id")
+  snapshotPosition Int?     @map("snapshot_position")
+  createdAt        DateTime @map("created_at") @db.Timestamptz(6)
+
+  @@map("exposures")
+}
+
+model RecommendationRequest {
+  requestId      String   @id @map("request_id")
+  userId         String   @map("user_id")
+  feedType       FeedType @map("feed_type")
+  modelVersion   String?  @map("model_version")
+  profileVersion Int      @map("profile_version")
+  cursor         String?  @map("cursor")
+  fallbackReason String?  @map("fallback_reason")
+  snapshotId     String?  @map("snapshot_id")
+  snapshotOffset Int?     @map("snapshot_offset")
+  returnedCount  Int      @map("returned_count")
+  latencyMs      Float    @map("latency_ms")
+  createdAt      DateTime @map("created_at") @db.Timestamptz(6)
+
+  @@map("recommendation_requests")
+}
+
+model Operation {
+  operationId Int      @id @default(autoincrement()) @map("operation_id")
+  adminUserId String   @map("admin_user_id")
+  action      String   @map("action")
+  itemId      String?  @map("item_id")
+  targetId    String?  @map("target_id")
+  batchId     String?  @map("batch_id")
+  reason      String   @map("reason")
+  beforeJson  String   @map("before_json")
+  afterJson   String   @map("after_json")
+  createdAt   DateTime @map("created_at") @db.Timestamptz(6)
+
+  @@map("operations")
+}
+
+model ModelVersion {
+  modelVersion          String        @id @map("model_version")
+  dataVersion           String?       @map("data_version")
+  algorithm             String        @map("algorithm")
+  artifactPath          String        @map("artifact_path")
+  metricsJson           String        @default("{}") @map("metrics_json")
+  trainingWindowStart   DateTime?     @map("training_window_start") @db.Timestamptz(6)
+  trainingWindowEnd     DateTime?     @map("training_window_end") @db.Timestamptz(6)
+  sampleCount           Int?          @map("sample_count")
+  eventCount            Int?          @map("event_count")
+  trainingStatus        TrainingStatus @default(succeeded) @map("training_status")
+  publishStatus         PublishStatus @default(published) @map("publish_status")
+  evaluationProtocolJson String       @default("{}") @map("evaluation_protocol_json")
+  status                ModelStatus   @map("status")
+  createdAt             DateTime      @map("created_at") @db.Timestamptz(6)
+  activatedAt           DateTime?     @map("activated_at") @db.Timestamptz(6)
+
+  @@map("model_versions")
+}
