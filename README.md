@@ -6,10 +6,11 @@
 
 > 当前状态：核心纵向链路、全量离线训练、API 测试和桌面/移动浏览器流程已实测。
 > 只有 `docs/VERIFICATION.md` 中记录了真实退出码和输出摘要的项目才算已验证；
-> 干净 checkout 的 smoke 链路已复现；正式演示视频仍明确列为未完成。
+> 干净 checkout 的 smoke 链路已复现；正式演示视频链接已交付。
 
 - 源码仓库：<https://github.com/BlossomRa1n/Yahaha>
 - 本地 Demo：<http://127.0.0.1:8000/>（按下方“初始化与启动”执行）
+- 演示视频：[江雨鸿-视频演示.mp4（夸克网盘）](https://pan.quark.cn/s/81e4e62f191a)
 - 逐项交付状态：[`docs/DELIVERY_CHECKLIST.md`](docs/DELIVERY_CHECKLIST.md)
 
 ## 架构与边界
@@ -328,7 +329,8 @@ Feed 在创建稳定快照前对普通候选执行确定性的标题词元 MMR �
 它是明确标记的 **staging snapshot**，当前 train-only benchmark 不会自动读取该文件；
 合并线上时段前必须重新确定时间 cutoff 并重新生成 validation/test，不能沿用旧指标。
 
-详细 3–5 分钟录屏步骤见 `docs/DEMO.md`。
+演示视频见[夸克网盘分享链接](https://pan.quark.cn/s/81e4e62f191a)，录屏步骤见
+`docs/DEMO.md`。
 
 ## 测试
 

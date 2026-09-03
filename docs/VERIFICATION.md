@@ -106,7 +106,7 @@ generated `metrics.json`.
 | Error/fallback | Missing model, empty candidates, offline item, network error | Automated corrupt-model and empty-candidate fallback passed; live offline 404 passed; browser showed connection error and recovered through retry after service restart | PASSED |
 | Responsive/console | Desktop and mobile layout, browser console | 1440 px and 390 px workflows completed with zero console warnings/errors | PASSED |
 | Clean reproduction | Fresh checkout through smoke model, DB, tests and health | Completed from the four committed revisions | PASSED |
-| Demo video | 3–5 minute recording | Script exists; recording was not performed | PENDING |
+| Demo video | 3–5 minute recording | [江雨鸿-视频演示.mp4（夸克网盘）](https://pan.quark.cn/s/81e4e62f191a)；分享落地页于 2026-09-04 返回 HTTP 200 | DELIVERED |
 
 ## Append-Only Run Notes
 
@@ -337,5 +337,11 @@ DevTools → Console（全程零 error/警告），窗口分别用 1440px 与 39
 - The TypeScript interop directory is source-only on this machine: Bun, a TypeScript
   compiler, installed packages and a dependency lockfile are absent. Live PostgreSQL,
   Elasticsearch and upstream proxy success paths have not been verified.
-- The required 3-5 minute demonstration recording and public video link remain
-  **PENDING**. `docs/DEMO.md` is the prepared recording procedure, not video evidence.
+- The recording procedure is retained in `docs/DEMO.md`; the candidate later supplied the external
+  video link. The final link check is recorded below rather than rewriting this historical note.
+
+### 2026-09-04 — Demonstration video delivery
+
+- Filename: `江雨鸿-视频演示.mp4`.
+- External share: <https://pan.quark.cn/s/81e4e62f191a>.
+- `HEAD`/public landing-page requests returned HTTP `200`; the HTML title was `夸克网盘分享`.
