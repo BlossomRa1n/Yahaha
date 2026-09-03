@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from scipy.sparse import load_npz, save_npz, spmatrix
 
 
 ARRAY_FILES = {
@@ -60,6 +61,7 @@ def write_staged_artifact(
     popularity: dict[str, Any],
     metrics: dict[str, Any],
     evaluation_markdown: str,
+    extra_artifacts: dict[str, Any] | None = None,
 ) -> Path:
     artifacts_dir = Path(artifacts_dir)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -78,11 +80,39 @@ def write_staged_artifact(
     _write_json(staging / "metrics.json", metrics)
     (staging / "evaluation.md").write_text(evaluation_markdown, encoding="utf-8")
 
+    for name, value in sorted((extra_artifacts or {}).items()):
+        if Path(name).name != name or name.startswith("."):
+            raise ArtifactValidationError(f"unsafe extra artifact name: {name}")
+        path = staging / name
+        if name.endswith(".npy"):
+            with path.open("wb") as handle:
+                np.save(handle, np.asarray(value), allow_pickle=False)
+        elif name.endswith(".npz") and isinstance(value, spmatrix):
+            save_npz(path, value, compressed=True)
+        elif name.endswith(".json") and isinstance(value, (dict, list)):
+            _write_json(path, value)
+        else:
+            raise ArtifactValidationError(f"unsupported extra artifact: {name}")
+
     files: dict[str, dict[str, Any]] = {
         name: _array_metadata(staging / name) for name in ARRAY_FILES
     }
     for name in SUPPORT_FILES:
         files[name] = {"bytes": (staging / name).stat().st_size, "sha256": sha256_file(staging / name)}
+    for name in sorted(extra_artifacts or {}):
+        path = staging / name
+        if name.endswith(".npy"):
+            files[name] = _array_metadata(path)
+        elif name.endswith(".npz"):
+            matrix = load_npz(path)
+            files[name] = {
+                "dtype": str(matrix.dtype),
+                "format": matrix.format,
+                "shape": list(matrix.shape),
+                "sha256": sha256_file(path),
+            }
+        else:
+            files[name] = {"bytes": path.stat().st_size, "sha256": sha256_file(path)}
     manifest = {**manifest_base, "files": files}
     _write_json(staging / "manifest.json", manifest)
     validate_artifact_dir(staging)
@@ -144,11 +174,84 @@ def validate_artifact_dir(artifact_dir: Path) -> dict[str, Any]:
             raise ArtifactValidationError(f"{name} is missing")
         if sha256_file(path) != details.get("sha256"):
             raise ArtifactValidationError(f"{name} checksum mismatch")
+    known_files = {*ARRAY_FILES, *SUPPORT_FILES}
+    for name, details in files.items():
+        if name in known_files:
+            continue
+        path = artifact_dir / name
+        if Path(name).name != name or not path.is_file() or not isinstance(details, dict):
+            raise ArtifactValidationError(f"invalid extra artifact: {name}")
+        if sha256_file(path) != details.get("sha256"):
+            raise ArtifactValidationError(f"{name} checksum mismatch")
     try:
         json.loads((artifact_dir / "popularity.json").read_text(encoding="utf-8"))
         json.loads((artifact_dir / "metrics.json").read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ArtifactValidationError("support JSON is invalid") from exc
+
+    content = manifest.get("content_features")
+    if content is not None:
+        required_content = {
+            "content_item_ids.npy",
+            "content_user_ids.npy",
+            "content_item_vectors.npz",
+            "content_user_vectors.npz",
+            "content_idf.npy",
+            "content_vectorizer.json",
+        }
+        if content.get("schema_version") != 1 or not required_content.issubset(files):
+            raise ArtifactValidationError("content feature manifest is incomplete")
+        content_item_ids = np.load(artifact_dir / "content_item_ids.npy", allow_pickle=False)
+        content_user_ids = np.load(artifact_dir / "content_user_ids.npy", allow_pickle=False)
+        content_idf = np.load(artifact_dir / "content_idf.npy", allow_pickle=False)
+        item_vectors = load_npz(artifact_dir / "content_item_vectors.npz")
+        user_vectors = load_npz(artifact_dir / "content_user_vectors.npz")
+        if content_item_ids.ndim != 1 or content_user_ids.ndim != 1 or content_idf.ndim != 1:
+            raise ArtifactValidationError("content feature id/idf arrays must be one dimensional")
+        if item_vectors.shape != (len(content_item_ids), len(content_idf)):
+            raise ArtifactValidationError("content item vector shape mismatch")
+        if user_vectors.shape != (len(content_user_ids), len(content_idf)):
+            raise ArtifactValidationError("content user vector shape mismatch")
+        if not np.isfinite(item_vectors.data).all() or not np.isfinite(user_vectors.data).all():
+            raise ArtifactValidationError("content vectors contain non-finite values")
+        try:
+            vectorizer = json.loads(
+                (artifact_dir / "content_vectorizer.json").read_text(encoding="utf-8")
+            )
+        except json.JSONDecodeError as exc:
+            raise ArtifactValidationError("content_vectorizer.json is invalid") from exc
+        if (
+            vectorizer.get("schema_version") != 1
+            or len(vectorizer.get("vocabulary") or {}) != len(content_idf)
+        ):
+            raise ArtifactValidationError("content vectorizer state is incompatible")
+    item_cf = manifest.get("item_cf")
+    if item_cf is not None:
+        required_cf = {
+            "item_cf_neighbors.npz",
+            "item_cf_user_history.npz",
+            "item_cf_config.json",
+        }
+        if item_cf.get("schema_version") != 1 or not required_cf.issubset(files):
+            raise ArtifactValidationError("item CF manifest is incomplete")
+        neighbors = load_npz(artifact_dir / "item_cf_neighbors.npz")
+        history = load_npz(artifact_dir / "item_cf_user_history.npz")
+        if neighbors.shape != (len(item_ids), len(item_ids)):
+            raise ArtifactValidationError("item CF neighbor shape mismatch")
+        if history.shape != (len(user_ids), len(item_ids)):
+            raise ArtifactValidationError("item CF history shape mismatch")
+        if not np.isfinite(neighbors.data).all() or not np.isfinite(history.data).all():
+            raise ArtifactValidationError("item CF artifacts contain non-finite values")
+        if neighbors.diagonal().any():
+            raise ArtifactValidationError("item CF must not retain self similarity")
+        try:
+            cf_config = json.loads(
+                (artifact_dir / "item_cf_config.json").read_text(encoding="utf-8")
+            )
+        except json.JSONDecodeError as exc:
+            raise ArtifactValidationError("item_cf_config.json is invalid") from exc
+        if cf_config.get("schema_version") != 1:
+            raise ArtifactValidationError("item CF config is incompatible")
     return manifest
 
 

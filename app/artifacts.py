@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from scipy.sparse import csr_matrix, load_npz
+from recsys.mixing import DYNAMIC_POLICY_VERSION, SAFE_POLICY_VERSION
 
 
 class ArtifactError(RuntimeError):
@@ -26,10 +28,40 @@ class ModelArtifact:
     user_factors: np.ndarray
     item_factors: np.ndarray
     popularity: list[tuple[str, float]]
+    content_item_ids: np.ndarray | None = None
+    content_user_ids: np.ndarray | None = None
+    content_item_vectors: csr_matrix | None = None
+    content_user_vectors: csr_matrix | None = None
+    content_metadata: dict[str, Any] | None = None
+    item_cf_neighbors: csr_matrix | None = None
+    item_cf_user_history: csr_matrix | None = None
+    item_cf_metadata: dict[str, Any] | None = None
+    mix_policy: dict[str, Any] | None = None
+    feature_errors: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "user_index", {str(v): i for i, v in enumerate(self.user_ids)})
         object.__setattr__(self, "item_index", {str(v): i for i, v in enumerate(self.item_ids)})
+        object.__setattr__(
+            self,
+            "content_item_index",
+            {
+                str(value): index
+                for index, value in enumerate(
+                    self.content_item_ids if self.content_item_ids is not None else ()
+                )
+            },
+        )
+        object.__setattr__(
+            self,
+            "content_user_index",
+            {
+                str(value): index
+                for index, value in enumerate(
+                    self.content_user_ids if self.content_user_ids is not None else ()
+                )
+            },
+        )
 
 
 class ArtifactStore:
@@ -102,9 +134,45 @@ class ArtifactStore:
                 raise ArtifactError("invalid metrics.json hash")
             metrics = self._read_json(metrics_path)
 
+        content_item_ids: np.ndarray | None = None
+        content_user_ids: np.ndarray | None = None
+        content_item_vectors: csr_matrix | None = None
+        content_user_vectors: csr_matrix | None = None
+        content_metadata: dict[str, Any] | None = None
+        feature_errors: list[str] = []
+        if manifest.get("content_features") is not None:
+            try:
+                (
+                    content_item_ids,
+                    content_user_ids,
+                    content_item_vectors,
+                    content_user_vectors,
+                    content_metadata,
+                ) = self._load_content_features(manifest_path.parent, manifest, files)
+            except (OSError, ValueError, KeyError, ArtifactError, json.JSONDecodeError) as exc:
+                feature_errors.append(f"content_features: {exc}")
+        item_cf_neighbors: csr_matrix | None = None
+        item_cf_user_history: csr_matrix | None = None
+        item_cf_metadata: dict[str, Any] | None = None
+        if manifest.get("item_cf") is not None:
+            try:
+                (
+                    item_cf_neighbors,
+                    item_cf_user_history,
+                    item_cf_metadata,
+                ) = self._load_item_cf(manifest_path.parent, manifest, files, user_ids, item_ids)
+            except (OSError, ValueError, KeyError, ArtifactError, json.JSONDecodeError) as exc:
+                feature_errors.append(f"item_cf: {exc}")
+
         version = str(manifest.get("model_version") or manifest.get("version") or "")
         if not version:
             raise ArtifactError("manifest is missing model_version")
+        mix_policy = dict(manifest.get("mix_policy") or {})
+        selected_policy = mix_policy.get("selected_policy_version")
+        if selected_policy not in {None, SAFE_POLICY_VERSION, DYNAMIC_POLICY_VERSION}:
+            raise ArtifactError(f"unsupported mix policy: {selected_policy}")
+        if mix_policy and mix_policy.get("schema_version") != 1:
+            raise ArtifactError("unsupported mix policy schema")
         return ModelArtifact(
             model_version=version,
             data_version=(str(manifest["data_version"]) if manifest.get("data_version") else None),
@@ -116,7 +184,101 @@ class ArtifactStore:
             user_factors=user_factors.astype(np.float64, copy=False),
             item_factors=item_factors.astype(np.float64, copy=False),
             popularity=popularity,
+            content_item_ids=content_item_ids,
+            content_user_ids=content_user_ids,
+            content_item_vectors=content_item_vectors,
+            content_user_vectors=content_user_vectors,
+            content_metadata=content_metadata,
+            item_cf_neighbors=item_cf_neighbors,
+            item_cf_user_history=item_cf_user_history,
+            item_cf_metadata=item_cf_metadata,
+            mix_policy=mix_policy,
+            feature_errors=tuple(feature_errors),
         )
+
+    def _load_item_cf(
+        self,
+        artifact_dir: Path,
+        manifest: dict[str, Any],
+        files: dict[str, Any],
+        user_ids: np.ndarray,
+        item_ids: np.ndarray,
+    ) -> tuple[csr_matrix, csr_matrix, dict[str, Any]]:
+        section = manifest.get("item_cf")
+        if not isinstance(section, dict) or section.get("schema_version") != 1:
+            raise ArtifactError("unsupported item CF schema")
+        names = (
+            "item_cf_neighbors.npz",
+            "item_cf_user_history.npz",
+            "item_cf_config.json",
+        )
+        for name in names:
+            path = (artifact_dir / name).resolve()
+            self._assert_child(path, artifact_dir)
+            expected_hash = self._file_hash(files, name, manifest)
+            if not path.is_file() or not expected_hash or not self._matches_hash(path, expected_hash):
+                raise ArtifactError(f"invalid item CF artifact: {name}")
+        neighbors = load_npz(artifact_dir / "item_cf_neighbors.npz").tocsr()
+        history = load_npz(artifact_dir / "item_cf_user_history.npz").tocsr()
+        config = self._read_json(artifact_dir / "item_cf_config.json")
+        if neighbors.shape != (len(item_ids), len(item_ids)):
+            raise ArtifactError("item CF neighbor shape mismatch")
+        if history.shape != (len(user_ids), len(item_ids)):
+            raise ArtifactError("item CF history shape mismatch")
+        if not np.isfinite(neighbors.data).all() or not np.isfinite(history.data).all():
+            raise ArtifactError("item CF contains non-finite values")
+        if neighbors.diagonal().any() or config.get("schema_version") != 1:
+            raise ArtifactError("item CF artifact is incompatible")
+        return neighbors, history, dict(section)
+
+    def _load_content_features(
+        self,
+        artifact_dir: Path,
+        manifest: dict[str, Any],
+        files: dict[str, Any],
+    ) -> tuple[np.ndarray, np.ndarray, csr_matrix, csr_matrix, dict[str, Any]]:
+        section = manifest.get("content_features")
+        if not isinstance(section, dict) or section.get("schema_version") != 1:
+            raise ArtifactError("unsupported content feature schema")
+        names = (
+            "content_item_ids.npy",
+            "content_user_ids.npy",
+            "content_item_vectors.npz",
+            "content_user_vectors.npz",
+            "content_idf.npy",
+            "content_vectorizer.json",
+        )
+        for name in names:
+            path = (artifact_dir / name).resolve()
+            self._assert_child(path, artifact_dir)
+            expected_hash = self._file_hash(files, name, manifest)
+            if not path.is_file() or not expected_hash or not self._matches_hash(path, expected_hash):
+                raise ArtifactError(f"invalid content artifact: {name}")
+        item_ids = np.load(artifact_dir / "content_item_ids.npy", allow_pickle=False)
+        user_ids = np.load(artifact_dir / "content_user_ids.npy", allow_pickle=False)
+        idf = np.load(artifact_dir / "content_idf.npy", allow_pickle=False)
+        item_vectors = load_npz(artifact_dir / "content_item_vectors.npz").tocsr()
+        user_vectors = load_npz(artifact_dir / "content_user_vectors.npz").tocsr()
+        vectorizer = self._read_json(artifact_dir / "content_vectorizer.json")
+        if item_ids.ndim != 1 or user_ids.ndim != 1 or idf.ndim != 1:
+            raise ArtifactError("content id/idf arrays must be one dimensional")
+        if item_vectors.shape != (len(item_ids), len(idf)):
+            raise ArtifactError("content item vector shape mismatch")
+        if user_vectors.shape != (len(user_ids), len(idf)):
+            raise ArtifactError("content user vector shape mismatch")
+        if (
+            not np.isfinite(item_vectors.data).all()
+            or not np.isfinite(user_vectors.data).all()
+            or not np.isfinite(idf).all()
+        ):
+            raise ArtifactError("content feature contains non-finite values")
+        if len(vectorizer.get("vocabulary") or {}) != len(idf):
+            raise ArtifactError("content vocabulary/idf mismatch")
+        metadata = dict(section)
+        metadata["vectorizer"] = {
+            key: value for key, value in vectorizer.items() if key != "vocabulary"
+        }
+        return item_ids, user_ids, item_vectors, user_vectors, metadata
 
     def _resolve_manifest(self, pointer: dict[str, Any]) -> Path:
         raw = pointer.get("manifest") or pointer.get("manifest_path")

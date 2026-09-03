@@ -221,14 +221,30 @@ def _write_interactions(path: Path, rows: Iterable[Interaction]) -> None:
 
 
 def _write_items(
-    path: Path, titles: dict[int, str], stats: dict[int, tuple[int, int]]
+    path: Path,
+    titles: dict[int, str],
+    stats: dict[int, tuple[int, int]],
+    *,
+    snapshot_version: str,
+    available_at: str | None,
 ) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, lineterminator="\n")
-        writer.writerow(["item_id", "title", "likes", "views"])
+        writer.writerow(
+            [
+                "item_id",
+                "title",
+                "likes",
+                "views",
+                "stats_snapshot_version",
+                "stats_available_at",
+            ]
+        )
         for item_id in sorted(titles):
             likes, views = stats[item_id]
-            writer.writerow([item_id, titles[item_id], likes, views])
+            writer.writerow(
+                [item_id, titles[item_id], likes, views, snapshot_version, available_at or ""]
+            )
 
 
 def _write_user_history(
@@ -265,18 +281,53 @@ def _distribution(values: Iterable[int]) -> dict[str, int]:
     }
 
 
-def _data_version(raw_files: dict[str, dict[str, object]], seed: int) -> str:
+def _data_version(
+    raw_files: dict[str, dict[str, object]],
+    seed: int,
+    stats_available_at: str | None,
+) -> str:
     material = {
         "raw_sha256": {name: details["sha256"] for name, details in raw_files.items()},
-        "schema_version": 1,
+        "schema_version": 2,
         "seed": seed,
         "split_policy": SPLIT_POLICY,
+        "stats_available_at": stats_available_at,
     }
     encoded = json.dumps(material, sort_keys=True, separators=(",", ":")).encode()
     return f"microlens50k-{hashlib.sha256(encoded).hexdigest()[:16]}"
 
 
-def prepare_data(raw_dir: Path, out_dir: Path, seed: int = 20260901) -> dict[str, object]:
+def canonical_optional_timestamp(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise DataValidationError("stats available_at must be ISO-8601") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def stats_snapshot_version(source_file_hash: str, available_at: str | None) -> str:
+    canonical_available_at = canonical_optional_timestamp(available_at)
+    material = json.dumps(
+        {
+            "available_at": canonical_available_at,
+            "source_file_hash": source_file_hash,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return f"likes-views-{hashlib.sha256(material).hexdigest()[:16]}"
+
+
+def prepare_data(
+    raw_dir: Path,
+    out_dir: Path,
+    seed: int = 20260901,
+    stats_available_at: str | None = None,
+) -> dict[str, object]:
     raw_dir = Path(raw_dir)
     out_dir = Path(out_dir)
     paths = {
@@ -300,20 +351,55 @@ def prepare_data(raw_dir: Path, out_dir: Path, seed: int = 20260901) -> dict[str
         name: {"bytes": path.stat().st_size, "sha256": sha256_file(path)}
         for name, path in paths.items()
     }
+    canonical_stats_available_at = canonical_optional_timestamp(stats_available_at)
+    stats_source = raw_files[STATS_FILE]
+    stats_snapshot = {
+        "snapshot_version": stats_snapshot_version(
+            str(stats_source["sha256"]), canonical_stats_available_at
+        ),
+        "available_at": canonical_stats_available_at,
+        "source_file_hash": stats_source["sha256"],
+        "source_file_name": STATS_FILE,
+        "source_file_mtime": datetime.fromtimestamp(
+            paths[STATS_FILE].stat().st_mtime,
+            tz=timezone.utc,
+        ).isoformat().replace("+00:00", "Z"),
+        "row_count": len(stats),
+        "quality": {
+            "duplicate_rows": 0,
+            "negative_likes_or_views": 0,
+            "missing_items": 0,
+        },
+        "historical_use_policy": (
+            "allowed_only_when_prediction_time_is_at_or_after_available_at"
+            if canonical_stats_available_at
+            else "disabled_for_historical_training_and_evaluation"
+        ),
+    }
     per_user_counts: dict[int, int] = defaultdict(int)
     for row in interactions:
         per_user_counts[row.user_id] += 1
 
     out_dir.parent.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
-    data_version = _data_version(raw_files, seed)
+    data_version = _data_version(raw_files, seed, canonical_stats_available_at)
     staging = out_dir.parent / f".prepare-{data_version}-{uuid.uuid4().hex}"
     staging.mkdir()
     try:
         for split_name, rows in splits.items():
             _write_interactions(staging / f"{split_name}.csv", rows)
-        _write_items(staging / "items.csv", titles, stats)
+        _write_items(
+            staging / "items.csv",
+            titles,
+            stats,
+            snapshot_version=str(stats_snapshot["snapshot_version"]),
+            available_at=canonical_stats_available_at,
+        )
         _write_user_history(staging / "user_history.jsonl", all_users, splits["train"])
+        (staging / "stats_snapshot.json").write_text(
+            json.dumps(stats_snapshot, indent=2, ensure_ascii=True, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
         generated_names = [
             "train.csv",
@@ -321,13 +407,15 @@ def prepare_data(raw_dir: Path, out_dir: Path, seed: int = 20260901) -> dict[str
             "test.csv",
             "items.csv",
             "user_history.jsonl",
+            "stats_snapshot.json",
         ]
         summary: dict[str, object] = {
-            "schema_version": 1,
+            "schema_version": 2,
             "data_version": data_version,
             "dataset": "MicroLens-50K",
             "seed": seed,
             "raw_files": raw_files,
+            "likes_views_snapshot": stats_snapshot,
             "source_schema": {
                 PAIRS_FILE: ["user", "item", "timestamp"],
                 TITLES_FILE: ["item", "title"],
@@ -372,6 +460,8 @@ def prepare_data(raw_dir: Path, out_dir: Path, seed: int = 20260901) -> dict[str
                 "train_max_lt_validation_min": True,
                 "validation_max_lt_test_min": True,
                 "untimed_likes_views_allowed_as_offline_feature": False,
+                "likes_views_requires_available_at_lte_prediction_time": True,
+                "interaction_popularity_feature_rule": "event_timestamp_ms <= feature_cutoff_ms",
                 "user_history_scope": "train_only",
             },
             "time_range": {
