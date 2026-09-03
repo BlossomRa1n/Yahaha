@@ -161,11 +161,14 @@ def test_delivery_documents_are_honest_about_verification() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     verification = (ROOT / "docs" / "VERIFICATION.md").read_text(encoding="utf-8")
     demo = (ROOT / "docs" / "DEMO.md").read_text(encoding="utf-8")
+    video_url = "https://pan.quark.cn/s/81e4e62f191a"
     assert "干净 checkout" in readme
-    assert "正式演示视频" in readme
-    assert "PENDING" in verification
+    assert "正式演示视频链接已交付" in readme
     assert "Demo video" in verification
-    assert "recording was not performed" in verification
+    assert "DELIVERED" in verification
+    assert video_url in readme
+    assert video_url in verification
+    assert video_url in demo
     assert "3–5 Minute" in demo
     assert "MicroLens" in readme
     assert "data/raw/" in readme
